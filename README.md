@@ -30,6 +30,14 @@ a_drag = -k |v| v,   k = 3 ρ_air C_d / (8 ρ_liquid r)
 Smaller droplets have a larger `k`, so they decelerate faster and travel less —
 the physical reason a fine mist stays close while big drops fly further.
 
+The drag coefficient `C_d` depends on the droplet **Reynolds number**
+`Re = ρ_air |v| (2r) / μ_air`. The default `clift_gauvin` model recomputes
+`C_d(Re)` each step (reducing to Stokes drag as `Re → 0` and to the Newton
+plateau at high `Re`), which is essential for fine droplets — a fixed `C_d` badly
+under-predicts drag at low `Re`. A `constant` model (fixed `C_d`, the original
+behaviour) is available via `--drag-model` / `DRAG_MODEL` for comparison and to
+reproduce older runs.
+
 Integration uses **semi-implicit (symplectic) Euler** with a fixed timestep, and
 the ground impact is found by linearly interpolating the crossing point within
 the final step.
@@ -118,6 +126,7 @@ cp config/default.conf config/my_run.conf
 | `DISTRIBUTION`   | `normal` or `lognormal`                        | `--distribution`    |
 | `MEAN_RADIUS_MM` | mean droplet radius (mm)                       | `--mean-radius-mm`  |
 | `RADIUS_STD_MM`  | std of droplet radius (mm)                     | `--radius-std-mm`   |
+| `DRAG_MODEL`     | `clift_gauvin` (Re-dependent) or `constant`    | `--drag-model`      |
 | `CONE`           | cone half-angle (degrees)                      | `--cone`            |
 | `HEIGHT`         | nozzle height (m)                              | `--height`          |
 | `SPEED_SPREAD`   | relative std of speed about the exit speed     | `--speed-spread`    |

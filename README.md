@@ -27,6 +27,31 @@ Integration uses **semi-implicit (symplectic) Euler** with a fixed timestep, and
 the ground impact is found by linearly interpolating the crossing point within
 the final step.
 
+### Nozzle hydraulics (droplet count & exit speed)
+
+Rather than typing a droplet count and speed directly, both are **derived** from
+the nozzle pressure, orifice size and shape via incompressible orifice flow
+(Bernoulli / Torricelli):
+
+```
+ideal velocity   v_ideal = √(2 ΔP / ρ)
+exit speed       v       = C_v · v_ideal
+volumetric flow  Q       = C_d · A · v_ideal          (A = orifice area)
+droplet count    N       = Q · spray_duration / V_droplet
+```
+
+`C_d` (discharge) and `C_v` (velocity) coefficients come from the nozzle
+**shape** (`sharp_orifice`, `rounded_orifice`, `full_cone`, `hollow_cone`,
+`flat_fan`). `V_droplet = (4/3)π·E[r³]` is the mean droplet volume, so for a
+fixed flow, finer droplets mean *many* more of them (`N ∝ 1/r³`).
+
+### Droplet size distribution
+
+Droplet radii are drawn from a configurable **`normal`** (Gaussian) or
+**`lognormal`** distribution, both parameterised by a linear-space mean radius
+and standard deviation. `E[r³]` (which sets the droplet count) is computed
+analytically from these for each distribution.
+
 ## Install
 
 ```bash
@@ -59,20 +84,31 @@ cp config/default.conf config/my_run.conf
 ./main.sh my_run
 ```
 
-| Key         | Meaning                          | `run.py` flag  |
-|-------------|----------------------------------|----------------|
-| `DROPLETS`  | number of droplets               | `--droplets`   |
-| `SPEED`     | nozzle exit speed (m/s)          | `--speed`      |
-| `CONE`      | cone half-angle (degrees)        | `--cone`       |
-| `HEIGHT`    | nozzle height (m)                | `--height`     |
-| `RADIUS_MM` | mean droplet radius (mm)         | `--radius-mm`  |
-| `DT`        | integration timestep (s)         | `--dt`         |
-| `SEED`      | RNG seed                         | `--seed`       |
-| `OUT`       | output figure path               | `--out`        |
-| `NO_PLOT`   | `true` = stats only, no figure   | `--no-plot`    |
+| Key              | Meaning                                        | `run.py` flag       |
+|------------------|------------------------------------------------|---------------------|
+| `PRESSURE_BAR`   | nozzle pressure (bar)                          | `--pressure-bar`    |
+| `ORIFICE_MM`     | orifice diameter (mm)                          | `--orifice-mm`      |
+| `NOZZLE_SHAPE`   | shape → discharge/velocity coefficients        | `--shape`           |
+| `SPRAY_DURATION` | seconds the nozzle is open (scales count)      | `--spray-duration`  |
+| `DISTRIBUTION`   | `normal` or `lognormal`                        | `--distribution`    |
+| `MEAN_RADIUS_MM` | mean droplet radius (mm)                       | `--mean-radius-mm`  |
+| `RADIUS_STD_MM`  | std of droplet radius (mm)                     | `--radius-std-mm`   |
+| `CONE`           | cone half-angle (degrees)                      | `--cone`            |
+| `HEIGHT`         | nozzle height (m)                              | `--height`          |
+| `SPEED_SPREAD`   | relative std of speed about the exit speed     | `--speed-spread`    |
+| `DT`             | integration timestep (s)                       | `--dt`              |
+| `SEED`           | RNG seed                                        | `--seed`            |
+| `OUT`            | output figure path                             | `--out`             |
+| `NO_PLOT`        | `true` = stats only, no figure                 | `--no-plot`         |
+| `DROPLETS`       | *optional* explicit count (empty = derive)     | `--droplets`        |
 
-Shipped presets: `default`, `fine_mist` (small slow droplets, wide cone) and
-`big_drops` (large fast droplets, narrow cone).
+Droplet **count** and **exit speed** are derived from `PRESSURE_BAR`,
+`ORIFICE_MM` and `NOZZLE_SHAPE` (see *Nozzle hydraulics* above); leave
+`DROPLETS` empty to use that derivation, or set it to pin an explicit count.
+
+Shipped presets: `default`, `fine_mist` (low-pressure hollow-cone atomiser, small
+Gaussian droplets) and `big_drops` (high-pressure flat-fan, large lognormal
+droplets).
 
 ### Calling `run.py` directly
 
@@ -80,10 +116,10 @@ Shipped presets: `default`, `fine_mist` (small slow droplets, wide cone) and
 run the Python CLI directly for ad-hoc experiments:
 
 ```bash
-python run.py                              # default spray -> output/spray_summary.png
-python run.py --droplets 8000 --speed 12 --cone 35
-python run.py --height 2.0 --radius-mm 0.6 --out output/big_drops.png
-python run.py --no-plot                    # print statistics only
+python run.py                                              # default nozzle
+python run.py --pressure-bar 5 --orifice-mm 1.2 --shape flat_fan
+python run.py --distribution normal --mean-radius-mm 0.3 --radius-std-mm 0.08
+python run.py --droplets 5000 --no-plot                   # pin count, stats only
 ```
 
 Either way, the run prints a JSON block of statistics (coverage radius, mean
@@ -99,10 +135,13 @@ flight time, impact speed, …) and writes a 2×2 figure:
 ```python
 from spraysim import SimConfig, NozzleConfig, Simulator, analysis, plots
 
-config = SimConfig(n_droplets=5000, nozzle=NozzleConfig(exit_speed=10.0))
+nozzle = NozzleConfig(pressure=5.0e5, orifice_diameter=1.0e-3, shape="flat_fan",
+                      distribution="normal", mean_radius=3.0e-4, radius_std=8.0e-5)
+config = SimConfig(nozzle=nozzle, spray_duration=0.2)  # droplet count derived
 result = Simulator(config).run()
-stats = analysis.summarize(result, config)
-print(stats.as_dict())
+
+print("exit speed:", result.exit_speed, "m/s  droplets:", result.n)
+print(analysis.summarize(result, config).as_dict())
 plots.save_figure(result, config, "output/custom.png")
 ```
 
@@ -113,6 +152,7 @@ config/          # *.conf presets (KEY=value) — the inputs you edit
 main.sh          # launcher: loads a config and runs the simulation
 spraysim/
   config.py      # dataclasses: PhysicsConfig, NozzleConfig, SimConfig
+  hydraulics.py  # pressure/orifice/shape -> exit speed, flow rate, droplet count
   nozzle.py      # samples initial positions, cone velocities, droplet radii
   simulator.py   # vectorised integrator -> SimResult
   analysis.py    # derived statistics (coverage, flight time, ...)

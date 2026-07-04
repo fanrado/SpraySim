@@ -19,6 +19,7 @@ import numpy as np
 
 from .config import PhysicsConfig, MaterialConfig, NozzleConfig, SimConfig
 from .materials import DEFAULT_VISCOSITY
+from .drag import CONSTANT, DEFAULT_AIR_VISCOSITY
 from .simulator import SimResult
 
 # Bumped when the on-disk layout changes in an incompatible way.
@@ -34,7 +35,9 @@ def _flatten_config(cfg: SimConfig) -> dict[str, np.ndarray]:
         # Physics
         "cfg_gravity": phys.gravity,
         "cfg_air_density": phys.air_density,
+        "cfg_air_viscosity": phys.air_viscosity,
         "cfg_drag_coefficient": phys.drag_coefficient,
+        "cfg_drag_model": phys.drag_model,
         "cfg_ground_z": phys.ground_z,
         # Material (sprayed liquid)
         "cfg_material_name": mat.name,
@@ -80,7 +83,12 @@ def _rebuild_config(z: np.lib.npyio.NpzFile) -> SimConfig:
         physics=PhysicsConfig(
             gravity=f("cfg_gravity"),
             air_density=f("cfg_air_density"),
+            # Archives written before P1 lack these; fall back so they reload to
+            # their original constant-Cd physics rather than the new default.
+            air_viscosity=f("cfg_air_viscosity") if "cfg_air_viscosity" in z
+            else DEFAULT_AIR_VISCOSITY,
             drag_coefficient=f("cfg_drag_coefficient"),
+            drag_model=str(z["cfg_drag_model"]) if "cfg_drag_model" in z else CONSTANT,
             ground_z=f("cfg_ground_z"),
         ),
         material=MaterialConfig(

@@ -100,6 +100,8 @@ cp config/default.conf config/my_run.conf
 | `SEED`           | RNG seed                                        | `--seed`            |
 | `OUT`            | output figure path                             | `--out`             |
 | `NO_PLOT`        | `true` = stats only, no figure                 | `--no-plot`         |
+| `DATA`           | output `.npz` data path (arrays + config)      | `--data`            |
+| `NO_DATA`        | `true` = skip saving the `.npz` data           | `--no-data`         |
 | `DROPLETS`       | *optional* explicit count (empty = derive)     | `--droplets`        |
 
 Droplet **count** and **exit speed** are derived from `PRESSURE_BAR`,
@@ -123,17 +125,42 @@ python run.py --droplets 5000 --no-plot                   # pin count, stats onl
 ```
 
 Either way, the run prints a JSON block of statistics (coverage radius, mean
-flight time, impact speed, …) and writes a 2×2 figure:
+flight time, impact speed, …), writes an `.npz` data file (see *Output data*
+below) and writes a 2×2 figure:
 
 1. **Trajectories (side view)** — sampled droplet paths, coloured by radius.
 2. **Landing pattern (top view)** — where droplets land, coloured by impact speed.
 3. **Radial deposition profile** — histogram of distance from the spray axis.
 4. **Droplet size distribution** — the sampled radii.
 
+## Output data (`.npz`)
+
+Every run also saves the full result to a compressed NumPy archive (`.npz`, a
+dictionary of named arrays) so you can re-analyse a run without recomputing it.
+The archive holds the per-droplet arrays (`landing_positions`, `flight_times`,
+`impact_speeds`, `radii`, `launch_speeds`, `landed`), the sampled trajectories
+(flattened into `traj_points` + `traj_lengths`), the derived hydraulics, and the
+complete run config (`cfg_*` keys) so it is fully self-describing.
+
+Load it back with the raw NumPy API for ad-hoc analysis, or with the helper that
+reconstructs the `SimResult` and `SimConfig`:
+
+```python
+import numpy as np
+z = np.load("output/spray_data.npz")
+print(z["radii"].mean(), z["landing_positions"].shape)
+
+from spraysim import storage
+result, config = storage.load_result("output/spray_data.npz")
+# `config` reproduces the run exactly: Simulator(config).run() gives the same result.
+```
+
+Pass `--no-data` (or `NO_DATA=true`) to skip writing it.
+
 ## Use as a library
 
 ```python
-from spraysim import SimConfig, NozzleConfig, Simulator, analysis, plots
+from spraysim import SimConfig, NozzleConfig, Simulator, analysis, plots, storage
 
 nozzle = NozzleConfig(pressure=5.0e5, orifice_diameter=1.0e-3, shape="flat_fan",
                       distribution="normal", mean_radius=3.0e-4, radius_std=8.0e-5)
@@ -143,6 +170,7 @@ result = Simulator(config).run()
 print("exit speed:", result.exit_speed, "m/s  droplets:", result.n)
 print(analysis.summarize(result, config).as_dict())
 plots.save_figure(result, config, "output/custom.png")
+storage.save_result(result, config, "output/custom.npz")  # reload later, no recompute
 ```
 
 ## Project layout
@@ -157,6 +185,7 @@ spraysim/
   simulator.py   # vectorised integrator -> SimResult
   analysis.py    # derived statistics (coverage, flight time, ...)
   plots.py       # static matplotlib summary figure
+  storage.py     # save/load a run to a .npz archive (arrays + config)
 run.py           # Python CLI entry point (called by main.sh)
 tests/           # pytest sanity checks (incl. vacuum free-fall vs analytic)
 ```

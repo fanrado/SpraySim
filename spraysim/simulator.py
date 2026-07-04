@@ -8,7 +8,7 @@ import numpy as np
 
 from .config import SimConfig
 from .nozzle import Nozzle
-from . import hydraulics
+from . import hydraulics, drag
 
 
 @dataclass
@@ -59,12 +59,20 @@ class Simulator:
         pos, vel, radii = nozzle.emit(n, rng)
         launch_speeds = np.linalg.norm(vel, axis=1)
 
-        # Per-droplet drag factor k so that a_drag = -k * |v| * v.
-        # Derived from F_drag = 0.5 * rho_air * Cd * A * |v| * v with
-        # A = pi r^2 and m = rho_liquid * (4/3) pi r^3.
-        k = (3.0 * phys.air_density * phys.drag_coefficient) / (
-            8.0 * cfg.material.density * radii
-        )
+        # Per-droplet drag factor k so that a_drag = -k * |v| * v, derived from
+        # F_drag = 0.5 * rho_air * Cd * A * |v| * v with A = pi r^2 and
+        # m = rho_liquid * (4/3) pi r^3, i.e. k = 3 rho_air Cd / (8 rho_liquid r).
+        #
+        # "constant" model: Cd is fixed, so k is precomputed once (identical to
+        # the original arithmetic). "clift_gauvin": Cd = Cd(Re) is recomputed per
+        # step, so only the radius-dependent base factor is precomputed here.
+        constant_drag = phys.drag_model == drag.CONSTANT
+        if constant_drag:
+            k_const = (3.0 * phys.air_density * phys.drag_coefficient) / (
+                8.0 * cfg.material.density * radii
+            )
+        else:
+            k_base = (3.0 * phys.air_density) / (8.0 * cfg.material.density * radii)
         gravity = np.array([0.0, 0.0, -phys.gravity])
 
         active = np.ones(n, dtype=bool)
@@ -90,7 +98,16 @@ class Simulator:
 
             a = active.copy()  # snapshot: active is mutated as droplets land
             speed = np.linalg.norm(vel[a], axis=1)
-            accel = gravity - (k[a] * speed)[:, None] * vel[a]
+
+            # Drag factor for the active droplets this step.
+            if constant_drag:
+                k_a = k_const[a]
+            else:
+                Re = drag.reynolds_number(speed, radii[a], phys.air_density,
+                                          phys.air_viscosity)
+                k_a = k_base[a] * drag.drag_coefficient(Re, phys.drag_model)
+
+            accel = gravity - (k_a * speed)[:, None] * vel[a]
 
             # Semi-implicit (symplectic) Euler: update velocity, then position.
             vel[a] += accel * dt

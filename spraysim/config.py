@@ -1,12 +1,14 @@
 """Configuration dataclasses for a spray simulation.
 
-All quantities are SI units (metres, seconds, kilograms, radians).
+All quantities are SI units (metres, seconds, kilograms, pascals, radians).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 import math
+
+from .hydraulics import DEFAULT_SHAPE
 
 
 @dataclass
@@ -22,7 +24,12 @@ class PhysicsConfig:
 
 @dataclass
 class NozzleConfig:
-    """Describes where droplets are born and how they are launched."""
+    """Describes where droplets are born and how they are launched.
+
+    Exit speed, flow rate and droplet count are *not* set here — they are
+    derived from ``pressure``, ``orifice_diameter`` and ``shape`` by the
+    hydraulics model (see :mod:`spraysim.hydraulics`).
+    """
 
     # Nozzle location (m). Default: 1.5 m above the origin.
     position: tuple[float, float, float] = (0.0, 0.0, 1.5)
@@ -30,22 +37,35 @@ class NozzleConfig:
     direction: tuple[float, float, float] = (0.0, 0.0, -1.0)
     # Full cone spread is 2 * half_angle around the axis.
     half_angle: float = math.radians(25.0)
-    # Exit speed (m/s) and its relative standard deviation.
-    exit_speed: float = 9.0
+
+    # --- Hydraulics inputs (these drive exit speed, flow rate, droplet count) ---
+    pressure: float = 3.0e5             # Pa (3 bar) gauge pressure drop
+    orifice_diameter: float = 0.8e-3    # m (0.8 mm) orifice diameter
+    shape: str = DEFAULT_SHAPE          # nozzle shape -> discharge/velocity coeffs
+    # Relative std of droplet speed about the derived exit speed (turbulence).
     speed_spread: float = 0.15
-    # Droplet radius distribution (m), sampled log-normally.
-    mean_radius: float = 4.0e-4      # 0.4 mm
-    radius_spread: float = 0.35      # relative sigma of the log-normal
+
+    # --- Droplet size distribution ---
+    # "normal" (Gaussian) or "lognormal"; both parameterised by the linear-space
+    # mean radius and standard deviation below.
+    distribution: str = "lognormal"
+    mean_radius: float = 4.0e-4         # m (0.4 mm) mean droplet radius
+    radius_std: float = 1.2e-4          # m (0.12 mm) std of droplet radius
 
 
 @dataclass
 class SimConfig:
     """Top-level run configuration."""
 
-    n_droplets: int = 4000
-    dt: float = 1.0e-3               # s, integration timestep
-    max_time: float = 8.0            # s, hard cap on flight time
-    n_trajectories: int = 60         # droplets whose full path is recorded
+    # Droplets are normally derived from hydraulics. Set this to pin an explicit
+    # count (used by tests and quick experiments) and skip the derivation.
+    n_droplets: int | None = None
+    spray_duration: float = 0.15        # s the nozzle is open (sets droplet count)
+    max_droplets: int = 200_000         # safety cap on the derived droplet count
+
+    dt: float = 1.0e-3                  # s, integration timestep
+    max_time: float = 8.0               # s, hard cap on flight time
+    n_trajectories: int = 60            # droplets whose full path is recorded
     seed: int | None = 42
 
     physics: PhysicsConfig = field(default_factory=PhysicsConfig)

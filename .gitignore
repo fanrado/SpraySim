@@ -9,5 +9,8 @@ venv/
 # Editor backups
 *~
 
+# macOS
+.DS_Store
+
 # Generated simulation output
 output/

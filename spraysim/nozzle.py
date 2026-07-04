@@ -7,6 +7,7 @@ The exit speed is derived from the nozzle pressure and shape via
 from __future__ import annotations
 
 import math
+import warnings
 
 import numpy as np
 
@@ -14,6 +15,8 @@ from .config import NozzleConfig
 from . import hydraulics
 
 _MIN_RADIUS = 1.0e-9  # m, floor to keep radii strictly positive after clipping
+# Warn when the normal distribution clips more than this fraction of radii at 0.
+_CLIP_WARN_FRACTION = 0.01
 
 
 def _orthonormal_basis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -49,6 +52,29 @@ class Nozzle:
             config.pressure, config.orifice_diameter, config.shape, liquid_density
         )
 
+        self._warn_if_normal_clips()
+
+    def _warn_if_normal_clips(self) -> None:
+        """Warn when a wide 'normal' distribution clips many radii at ~0.
+
+        E[r^3] (and thus the droplet count) is corrected for the clipping, but a
+        large clipped fraction still means many unphysical near-zero droplets;
+        'lognormal' avoids negative radii entirely.
+        """
+        cfg = self.config
+        if cfg.distribution != "normal" or cfg.radius_std <= 0.0:
+            return
+        # Fraction of the Gaussian below zero: Phi(-mean/std).
+        clip_frac = 0.5 * math.erfc((cfg.mean_radius / cfg.radius_std) / math.sqrt(2.0))
+        if clip_frac > _CLIP_WARN_FRACTION:
+            warnings.warn(
+                f"normal droplet-size distribution clips {clip_frac:.1%} of radii "
+                f"at 0 (mean_radius/radius_std="
+                f"{cfg.mean_radius / cfg.radius_std:.2f}); consider "
+                "distribution='lognormal' for a wide spread.",
+                stacklevel=3,
+            )
+
     # -- droplet size distribution -------------------------------------------
 
     def sample_radii(self, n: int, rng: np.random.Generator) -> np.ndarray:
@@ -69,9 +95,18 @@ class Nozzle:
         cfg = self.config
         m, s = cfg.mean_radius, cfg.radius_std
         if cfg.distribution == "normal":
-            # Raw third moment of a Gaussian (clipping of the tiny negative tail
-            # is neglected; valid while std << mean).
-            return m**3 + 3.0 * m * s**2
+            # The sampler clips radii at ~0, so the relevant moment is the
+            # partial (left-truncated at 0) third moment E[max(r,0)^3], which
+            # matches the clipped samples for any spread. The full m^3+3 m s^2
+            # drifts high by the neglected negative tail once s is not << m.
+            # For X ~ N(m, s^2):
+            #   Phi(m/s) * (m^3 + 3 m s^2) + phi(m/s) * s * (m^2 + 2 s^2)
+            if s <= 0.0:
+                return m**3
+            z = m / s
+            Phi = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+            phi = math.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
+            return Phi * (m**3 + 3.0 * m * s**2) + phi * s * (m**2 + 2.0 * s**2)
         if cfg.distribution == "lognormal":
             mu, sigma = _lognormal_params(m, s)
             return math.exp(3.0 * mu + 4.5 * sigma**2)

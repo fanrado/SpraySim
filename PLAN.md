@@ -12,7 +12,14 @@ tooling.
 
 ---
 
-## P1 — Reynolds-dependent drag coefficient
+## P1 — Reynolds-dependent drag coefficient  ✅ DONE
+
+Implemented: `spraysim/drag.py` (Clift–Gauvin + constant models), `air_viscosity`
+and `drag_model` on `PhysicsConfig` (default `clift_gauvin`), per-step `Cd(Re)` in
+the integrator (constant path kept bit-for-bit), storage round-trip with old
+archives falling back to `constant`, `--drag-model` / `DRAG_MODEL` plumbing, tests
+and docs. Verified: constant reproduces legacy `v_t`; clift_gauvin matches the
+Cd(Re) fixed-point solve; vacuum stays drag-free.
 
 ### Problem
 `spraysim/simulator.py:65` builds the drag factor with a **constant**

@@ -9,9 +9,11 @@ from spraysim import (
     SimConfig,
     NozzleConfig,
     PhysicsConfig,
+    MaterialConfig,
     Simulator,
     analysis,
     hydraulics,
+    materials,
     storage,
 )
 from spraysim.nozzle import Nozzle
@@ -72,7 +74,7 @@ def test_droplet_count_derivation_matches_volume_balance():
     cfg = SimConfig(spray_duration=0.2, seed=3)  # n_droplets=None => derive
     result = Simulator(cfg).run()
 
-    nozzle = Nozzle(cfg.nozzle, cfg.physics.water_density)
+    nozzle = Nozzle(cfg.nozzle, cfg.material.density)
     expected = nozzle.flow_rate * cfg.spray_duration / nozzle.mean_droplet_volume()
     assert result.n == pytest.approx(round(expected))
     assert not result.droplets_capped
@@ -87,6 +89,34 @@ def test_more_pressure_yields_more_droplets():
     assert n_high > n_low
 
 
+def test_material_density_registry():
+    """Named materials resolve to a density; unknown names raise clearly."""
+    assert materials.material_density("water") == 1000.0
+    assert materials.material_density("ethanol") < materials.material_density("water")
+    with pytest.raises(KeyError):
+        materials.material_density("unobtanium")
+
+
+def test_denser_liquid_lowers_exit_speed():
+    """Torricelli: v = C_v sqrt(2 dP / rho), so exit speed scales as 1/sqrt(rho)."""
+    light = hydraulics.exit_speed(3.0e5, "full_cone", 800.0)
+    heavy = hydraulics.exit_speed(3.0e5, "full_cone", 1200.0)
+    assert heavy < light
+    assert light / heavy == pytest.approx(math.sqrt(1200.0 / 800.0), rel=1e-9)
+
+
+def test_material_changes_simulation_outcome():
+    """Switching the sprayed liquid changes droplet dynamics for a fixed nozzle."""
+    base = SimConfig(n_droplets=400, seed=2, material=MaterialConfig("water", 1000.0))
+    dense = SimConfig(n_droplets=400, seed=2, material=MaterialConfig("glycerin", 1260.0))
+    r_water = Simulator(base).run()
+    r_glyc = Simulator(dense).run()
+    # Denser liquid -> lower Torricelli exit speed for the same pressure.
+    assert r_glyc.exit_speed < r_water.exit_speed
+    # The landing pattern is not identical between materials.
+    assert not np.allclose(r_glyc.landing_positions, r_water.landing_positions)
+
+
 def test_normal_and_lognormal_moments():
     """mean_cubed_radius matches the sampled E[r^3] for both distributions."""
     rng = np.random.default_rng(0)
@@ -99,7 +129,8 @@ def test_normal_and_lognormal_moments():
 
 def test_npz_round_trip_preserves_result_and_config(tmp_path):
     """Saving to .npz and loading back reproduces arrays, trajectories, config."""
-    cfg = SimConfig(n_droplets=300, seed=11)
+    cfg = SimConfig(n_droplets=300, seed=11,
+                    material=MaterialConfig("ethanol", 789.0))
     result = Simulator(cfg).run()
 
     path = storage.save_result(result, cfg, tmp_path / "run.npz")
@@ -125,6 +156,8 @@ def test_npz_round_trip_preserves_result_and_config(tmp_path):
     assert loaded_cfg.nozzle.shape == cfg.nozzle.shape
     assert loaded_cfg.nozzle.distribution == cfg.nozzle.distribution
     assert loaded_cfg.nozzle.pressure == pytest.approx(cfg.nozzle.pressure)
+    assert loaded_cfg.material.name == cfg.material.name
+    assert loaded_cfg.material.density == pytest.approx(cfg.material.density)
     rerun = Simulator(loaded_cfg).run()
     assert np.array_equal(rerun.landing_positions, result.landing_positions)
 

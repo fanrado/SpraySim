@@ -30,13 +30,26 @@ from spraysim import (
     storage,
 )
 from spraysim.hydraulics import SHAPE_COEFFICIENTS
-from spraysim.materials import MATERIALS, material_density
+from spraysim.materials import (
+    MATERIALS,
+    DEFAULT_VISCOSITY,
+    material_density,
+    material_viscosity,
+)
 
 
 def build_config(args: argparse.Namespace) -> SimConfig:
     # Material density: explicit --density overrides the named material's default.
     density = args.density if args.density is not None else material_density(args.material)
-    material = MaterialConfig(name=args.material, density=density)
+    # Material viscosity: --viscosity wins; else the registry value; else (custom
+    # liquid not in the registry) fall back to water's viscosity.
+    if args.viscosity is not None:
+        viscosity = args.viscosity
+    elif args.material in MATERIALS:
+        viscosity = material_viscosity(args.material)
+    else:
+        viscosity = DEFAULT_VISCOSITY
+    material = MaterialConfig(name=args.material, density=density, viscosity=viscosity)
     nozzle = NozzleConfig(
         position=(0.0, 0.0, args.height),
         half_angle=math.radians(args.cone),
@@ -76,6 +89,9 @@ def main() -> None:
                         + " (or any name with --density)")
     p.add_argument("--density", type=float, default=None,
                    help="liquid density (kg/m^3); overrides the material's default")
+    p.add_argument("--viscosity", type=float, default=None,
+                   help="liquid dynamic viscosity (Pa*s); overrides the material's "
+                        "default (custom liquids default to water's viscosity)")
     # Droplet size distribution.
     p.add_argument("--distribution", default="lognormal", choices=["normal", "lognormal"],
                    help="droplet radius distribution")
@@ -102,7 +118,8 @@ def main() -> None:
     except KeyError as exc:
         p.error(str(exc).strip('"'))
 
-    print(f"Material: {config.material.name} ({config.material.density:g} kg/m^3)")
+    print(f"Material: {config.material.name} ({config.material.density:g} kg/m^3, "
+          f"{config.material.viscosity:g} Pa*s)")
     print(f"Nozzle: {args.pressure_bar} bar, orifice {args.orifice_mm} mm, "
           f"{args.shape}, spraying for {args.spray_duration} s")
     print(f"Droplet size: {args.distribution}, "

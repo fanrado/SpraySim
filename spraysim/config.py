@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 import math
 
 from .hydraulics import DEFAULT_SHAPE
-from .materials import DEFAULT_MATERIAL, material_density
+from .materials import DEFAULT_MATERIAL, DEFAULT_VISCOSITY, material_density
 
 
 @dataclass
@@ -24,10 +24,16 @@ class PhysicsConfig:
 
 @dataclass
 class MaterialConfig:
-    """The sprayed liquid. Its density sets droplet mass and exit hydraulics."""
+    """The sprayed liquid. Its density sets droplet mass and exit hydraulics.
 
-    name: str = DEFAULT_MATERIAL              # label; picks a default density
+    ``viscosity`` (dynamic, Pa*s) is carried for custom-liquid definitions and
+    reporting; it defaults to water's value and is not yet coupled to the flight
+    physics.
+    """
+
+    name: str = DEFAULT_MATERIAL              # label; picks default properties
     density: float = material_density(DEFAULT_MATERIAL)  # kg/m^3
+    viscosity: float = DEFAULT_VISCOSITY      # Pa*s (dynamic); water by default
 
 
 @dataclass

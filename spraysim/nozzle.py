@@ -38,15 +38,15 @@ def _lognormal_params(mean: float, std: float) -> tuple[float, float]:
 class Nozzle:
     """Emits droplets into a cone around a spray axis."""
 
-    def __init__(self, config: NozzleConfig, water_density: float):
+    def __init__(self, config: NozzleConfig, liquid_density: float):
         self.config = config
-        self.water_density = water_density
+        self.liquid_density = liquid_density
         self._u, self._v, self._w = _orthonormal_basis(np.asarray(config.direction, float))
 
         # Derived hydraulics (constant for the run).
-        self.exit_speed = hydraulics.exit_speed(config.pressure, config.shape, water_density)
+        self.exit_speed = hydraulics.exit_speed(config.pressure, config.shape, liquid_density)
         self.flow_rate = hydraulics.flow_rate(
-            config.pressure, config.orifice_diameter, config.shape, water_density
+            config.pressure, config.orifice_diameter, config.shape, liquid_density
         )
 
     # -- droplet size distribution -------------------------------------------

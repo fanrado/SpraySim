@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .config import PhysicsConfig, NozzleConfig, SimConfig
+from .config import PhysicsConfig, MaterialConfig, NozzleConfig, SimConfig
 from .simulator import SimResult
 
 # Bumped when the on-disk layout changes in an incompatible way.
@@ -26,16 +26,18 @@ FORMAT_VERSION = 1
 
 def _flatten_config(cfg: SimConfig) -> dict[str, np.ndarray]:
     """Serialise a SimConfig into flat ``cfg_*`` entries (NaN encodes None)."""
-    phys, noz = cfg.physics, cfg.nozzle
+    phys, mat, noz = cfg.physics, cfg.material, cfg.nozzle
     n_dpl = np.nan if cfg.n_droplets is None else float(cfg.n_droplets)
     seed = np.nan if cfg.seed is None else float(cfg.seed)
     return {
         # Physics
         "cfg_gravity": phys.gravity,
         "cfg_air_density": phys.air_density,
-        "cfg_water_density": phys.water_density,
         "cfg_drag_coefficient": phys.drag_coefficient,
         "cfg_ground_z": phys.ground_z,
+        # Material (sprayed liquid)
+        "cfg_material_name": mat.name,
+        "cfg_material_density": mat.density,
         # Nozzle
         "cfg_position": np.asarray(noz.position, dtype=float),
         "cfg_direction": np.asarray(noz.direction, dtype=float),
@@ -76,9 +78,12 @@ def _rebuild_config(z: np.lib.npyio.NpzFile) -> SimConfig:
         physics=PhysicsConfig(
             gravity=f("cfg_gravity"),
             air_density=f("cfg_air_density"),
-            water_density=f("cfg_water_density"),
             drag_coefficient=f("cfg_drag_coefficient"),
             ground_z=f("cfg_ground_z"),
+        ),
+        material=MaterialConfig(
+            name=str(z["cfg_material_name"]),
+            density=f("cfg_material_density"),
         ),
         nozzle=NozzleConfig(
             position=tuple(z["cfg_position"].tolist()),

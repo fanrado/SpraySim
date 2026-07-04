@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import PhysicsConfig, MaterialConfig, NozzleConfig, SimConfig
+from .materials import DEFAULT_VISCOSITY
 from .simulator import SimResult
 
 # Bumped when the on-disk layout changes in an incompatible way.
@@ -38,6 +39,7 @@ def _flatten_config(cfg: SimConfig) -> dict[str, np.ndarray]:
         # Material (sprayed liquid)
         "cfg_material_name": mat.name,
         "cfg_material_density": mat.density,
+        "cfg_material_viscosity": mat.viscosity,
         # Nozzle
         "cfg_position": np.asarray(noz.position, dtype=float),
         "cfg_direction": np.asarray(noz.direction, dtype=float),
@@ -84,6 +86,9 @@ def _rebuild_config(z: np.lib.npyio.NpzFile) -> SimConfig:
         material=MaterialConfig(
             name=str(z["cfg_material_name"]),
             density=f("cfg_material_density"),
+            # Fall back to water's viscosity for archives written before it existed.
+            viscosity=f("cfg_material_viscosity") if "cfg_material_viscosity" in z
+            else DEFAULT_VISCOSITY,
         ),
         nozzle=NozzleConfig(
             position=tuple(z["cfg_position"].tolist()),

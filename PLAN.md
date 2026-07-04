@@ -185,7 +185,15 @@ the landing position consistently with that `frac` (position already is).
 
 ---
 
-## T — Lock in the validation harness
+## T — Lock in the validation harness  ✅ DONE
+
+Added `analysis/validate.py`: a runnable pass/fail battery (vacuum free-fall,
+terminal velocity for both drag models, Cd(Re) limits, O(dt) convergence, drag
+monotonicity, hydraulics identities, impact-speed energy consistency, clipped
+normal E[r^3]) that exits non-zero on failure. The deterministic checks are
+asserted in `tests/test_simulator.py` (terminal velocity, Stokes/Newton limits,
+energy consistency and moments landed with P1–P3; convergence order and drag
+monotonicity added here). Documented in `analysis/README.md`.
 
 The checks above were run from throwaway scripts. Make validation repeatable.
 

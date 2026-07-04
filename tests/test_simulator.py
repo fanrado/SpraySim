@@ -12,6 +12,7 @@ from spraysim import (
     Simulator,
     analysis,
     hydraulics,
+    storage,
 )
 from spraysim.nozzle import Nozzle
 
@@ -94,6 +95,50 @@ def test_normal_and_lognormal_moments():
         nozzle = Nozzle(cfg, WATER)
         sampled = np.mean(nozzle.sample_radii(200_000, rng) ** 3)
         assert nozzle.mean_cubed_radius() == pytest.approx(sampled, rel=2e-2)
+
+
+def test_npz_round_trip_preserves_result_and_config(tmp_path):
+    """Saving to .npz and loading back reproduces arrays, trajectories, config."""
+    cfg = SimConfig(n_droplets=300, seed=11)
+    result = Simulator(cfg).run()
+
+    path = storage.save_result(result, cfg, tmp_path / "run.npz")
+    assert path.exists()
+
+    loaded, loaded_cfg = storage.load_result(path)
+
+    # Per-droplet arrays survive exactly.
+    assert np.array_equal(loaded.landing_positions, result.landing_positions)
+    assert np.array_equal(loaded.radii, result.radii)
+    assert np.array_equal(loaded.landed, result.landed)
+    assert loaded.exit_speed == pytest.approx(result.exit_speed)
+    assert loaded.droplets_capped == result.droplets_capped
+
+    # Variable-length trajectories split back to the same shapes and values.
+    assert len(loaded.trajectories) == len(result.trajectories)
+    for a, b in zip(loaded.trajectories, result.trajectories):
+        assert np.array_equal(a, b)
+
+    # Config round-trips, so re-running the loaded config reproduces the result.
+    assert loaded_cfg.n_droplets == cfg.n_droplets
+    assert loaded_cfg.seed == cfg.seed
+    assert loaded_cfg.nozzle.shape == cfg.nozzle.shape
+    assert loaded_cfg.nozzle.distribution == cfg.nozzle.distribution
+    assert loaded_cfg.nozzle.pressure == pytest.approx(cfg.nozzle.pressure)
+    rerun = Simulator(loaded_cfg).run()
+    assert np.array_equal(rerun.landing_positions, result.landing_positions)
+
+
+def test_npz_round_trip_with_derived_count(tmp_path):
+    """A derived-count run (n_droplets=None) round-trips the None sentinel."""
+    cfg = SimConfig(spray_duration=0.05, seed=5)  # n_droplets=None => derived
+    result = Simulator(cfg).run()
+
+    path = storage.save_result(result, cfg, tmp_path / "derived.npz")
+    _, loaded_cfg = storage.load_result(path)
+
+    assert loaded_cfg.n_droplets is None
+    assert loaded_cfg.spray_duration == pytest.approx(cfg.spray_duration)
 
 
 def test_stats_are_consistent():

@@ -117,6 +117,37 @@ def test_droplet_count_derivation_matches_volume_balance():
     assert result.flow_rate > 0.0
 
 
+def test_timestep_convergence_is_first_order():
+    """Semi-implicit Euler is O(dt): the flight-time error halves as dt halves."""
+    h = 10.0
+
+    def flight_time(dt):
+        noz = NozzleConfig(position=(0.0, 0.0, h), direction=(0, 0, -1),
+                           half_angle=0.0, pressure=0.0, speed_spread=0.0,
+                           distribution="normal", mean_radius=4e-4, radius_std=0.0)
+        cfg = SimConfig(n_droplets=1, dt=dt, max_time=30.0, seed=0, nozzle=noz,
+                        physics=PhysicsConfig(drag_model="constant"))
+        return Simulator(cfg).run().flight_times[0]
+
+    ref = flight_time(1.25e-4)
+    errs = [abs(flight_time(dt) - ref) for dt in (4e-3, 2e-3, 1e-3)]
+    for coarse, fine in zip(errs, errs[1:]):
+        assert 1.6 < coarse / fine < 2.4  # ~2x per halving
+
+
+def test_smaller_droplets_travel_less_far():
+    """Drag monotonicity: for a fixed launch, smaller droplets land closer."""
+    ranges = []
+    for r in (1e-4, 4e-4, 1.6e-3):
+        noz = NozzleConfig(position=(0.0, 0.0, 2.0), direction=(1, 0, 0),
+                           half_angle=0.0, pressure=3e5, speed_spread=0.0,
+                           distribution="normal", mean_radius=r, radius_std=0.0)
+        res = Simulator(SimConfig(n_droplets=1, dt=1e-3, max_time=20.0, seed=0,
+                                  nozzle=noz)).run()
+        ranges.append(math.hypot(res.landing_positions[0, 0], res.landing_positions[0, 1]))
+    assert ranges[0] < ranges[1] < ranges[2]
+
+
 def test_more_pressure_yields_more_droplets():
     low = NozzleConfig(pressure=2.0e5)
     high = NozzleConfig(pressure=6.0e5)

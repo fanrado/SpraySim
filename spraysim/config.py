@@ -10,6 +10,7 @@ import math
 
 from .hydraulics import DEFAULT_SHAPE
 from .materials import DEFAULT_MATERIAL, DEFAULT_VISCOSITY, material_density
+from .drag import DEFAULT_DRAG_MODEL, DEFAULT_AIR_VISCOSITY
 
 
 @dataclass
@@ -18,7 +19,9 @@ class PhysicsConfig:
 
     gravity: float = 9.81           # m/s^2, acts along -z
     air_density: float = 1.225      # kg/m^3 at sea level, 15 C
-    drag_coefficient: float = 0.47  # dimensionless, sphere
+    air_viscosity: float = DEFAULT_AIR_VISCOSITY  # Pa*s; sets the droplet Reynolds number
+    drag_coefficient: float = 0.47  # dimensionless; used only by the "constant" drag model
+    drag_model: str = DEFAULT_DRAG_MODEL  # "clift_gauvin" (Re-dependent) | "constant"
     ground_z: float = 0.0           # m, height of the impact plane
 
 

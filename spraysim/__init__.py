@@ -8,7 +8,7 @@ The package produces numerical results and static plots (no animation).
 from .config import PhysicsConfig, NozzleConfig, SimConfig
 from .nozzle import Nozzle
 from .simulator import Simulator, SimResult
-from . import analysis, plots
+from . import analysis, plots, hydraulics
 
 __all__ = [
     "PhysicsConfig",
@@ -19,6 +19,7 @@ __all__ = [
     "SimResult",
     "analysis",
     "plots",
+    "hydraulics",
 ]
 
 __version__ = "0.1.0"

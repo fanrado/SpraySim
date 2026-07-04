@@ -48,26 +48,42 @@ echo "Loading config: ${CONFIG}"
 source "$CONFIG"
 
 # Fall back to sensible defaults for anything the config didn't set.
-DROPLETS="${DROPLETS:-4000}"
-SPEED="${SPEED:-9.0}"
+PRESSURE_BAR="${PRESSURE_BAR:-3.0}"
+ORIFICE_MM="${ORIFICE_MM:-0.8}"
+NOZZLE_SHAPE="${NOZZLE_SHAPE:-full_cone}"
+SPRAY_DURATION="${SPRAY_DURATION:-0.15}"
+DISTRIBUTION="${DISTRIBUTION:-lognormal}"
+MEAN_RADIUS_MM="${MEAN_RADIUS_MM:-0.4}"
+RADIUS_STD_MM="${RADIUS_STD_MM:-0.12}"
 CONE="${CONE:-25.0}"
 HEIGHT="${HEIGHT:-1.5}"
-RADIUS_MM="${RADIUS_MM:-0.4}"
+SPEED_SPREAD="${SPEED_SPREAD:-0.15}"
 DT="${DT:-0.001}"
 SEED="${SEED:-42}"
 OUT="${OUT:-output/spray_summary.png}"
 NO_PLOT="${NO_PLOT:-false}"
+DROPLETS="${DROPLETS:-}"
 
 # Assemble the run.py invocation.
 CMD=("$PYTHON" run.py
-    --droplets "$DROPLETS"
-    --speed "$SPEED"
+    --pressure-bar "$PRESSURE_BAR"
+    --orifice-mm "$ORIFICE_MM"
+    --shape "$NOZZLE_SHAPE"
+    --spray-duration "$SPRAY_DURATION"
+    --distribution "$DISTRIBUTION"
+    --mean-radius-mm "$MEAN_RADIUS_MM"
+    --radius-std-mm "$RADIUS_STD_MM"
     --cone "$CONE"
     --height "$HEIGHT"
-    --radius-mm "$RADIUS_MM"
+    --speed-spread "$SPEED_SPREAD"
     --dt "$DT"
     --seed "$SEED"
     --out "$OUT")
+
+# Only pin an explicit droplet count if the config set one.
+if [[ -n "$DROPLETS" ]]; then
+    CMD+=(--droplets "$DROPLETS")
+fi
 
 if [[ "$NO_PLOT" == "true" ]]; then
     CMD+=(--no-plot)

@@ -130,16 +130,24 @@ reproducibility.
 
 ## 6. Environment constants (not the sprayer, but they act on the spray)
 
-Held on `PhysicsConfig`. Only settable via the library — not exposed as config
-keys or CLI flags — but they influence every trajectory.
+Held on `PhysicsConfig`. `drag_model` is exposed as a config key / CLI flag; the
+rest are library-only but influence every trajectory.
 
-| Field | Unit | Default | Meaning |
-|-------|------|---------|---------|
-| `gravity` | m/s² | `9.81` | Downward acceleration. |
-| `air_density` | kg/m³ | `1.225` | Sets the drag magnitude (sea level, 15 °C). `0` disables drag. |
-| `drag_coefficient` | — | `0.47` | Sphere drag coefficient `C_d`. |
-| `ground_z` | m | `0.0` | Height of the impact plane. |
+| Field | Config key | CLI flag | Unit | Default | Meaning |
+|-------|-----------|----------|------|---------|---------|
+| `gravity` | — | — | m/s² | `9.81` | Downward acceleration. |
+| `air_density` | — | — | kg/m³ | `1.225` | Sets the drag magnitude (sea level, 15 °C). `0` disables drag. |
+| `air_viscosity` | — | — | Pa·s | `1.81e-5` | Air dynamic viscosity; sets the droplet Reynolds number. |
+| `drag_model` | `DRAG_MODEL` | `--drag-model` | name | `clift_gauvin` | `clift_gauvin` (Reynolds-dependent `C_d`) or `constant` (fixed `C_d`, legacy). |
+| `drag_coefficient` | — | — | — | `0.47` | Fixed `C_d` used **only** by the `constant` drag model. |
+| `ground_z` | — | — | m | `0.0` | Height of the impact plane. |
 
-The per-droplet drag factor is `k = 3·ρ_air·C_d / (8·ρ_liquid·r)`, so both the
-**air density here** and the **liquid density from the material** set how quickly
-droplets slow down. See [material_properties.md](material_properties.md).
+The per-droplet drag factor is `k = 3·ρ_air·C_d / (8·ρ_liquid·r)`, so the
+**air density**, the **liquid density from the material**, and — through
+`C_d(Re)` with `Re = ρ_air·|v|·2r / μ_air` — the **air viscosity** all set how
+quickly droplets slow down.
+
+The `clift_gauvin` model recomputes `C_d(Re)` every step; it reduces to Stokes
+drag at low `Re` and the Newton plateau at high `Re`. A fixed `C_d` (the
+`constant` model) over-predicts range and impact speed for fine droplets by 2× or
+more — see [material_properties.md](material_properties.md).

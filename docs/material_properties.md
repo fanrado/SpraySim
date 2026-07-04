@@ -122,15 +122,18 @@ combined landing distance, which is exactly why running the sim is useful.
 
 ## Scope and limitations
 
-- **Density drives the physics; viscosity is carried but not yet coupled.**
+- **Density drives the physics; liquid viscosity is carried but not yet coupled.**
   Viscosity is a first-class material property now (configurable per liquid,
-  reported, and saved), but it does not yet change any trajectory. In a fuller
-  model, liquid viscosity would govern **atomisation** — how the sheet breaks up
-  and what droplet sizes form — and could feed the orifice discharge coefficient
-  at low Reynolds numbers. Here the droplet size distribution is still an
-  **input** (see the [sprayer parameters](sprayer_parameters.md)), so changing a
-  liquid's viscosity alone leaves the result unchanged; changing its density does
-  not. Viscosity is in place as the hook for those future effects.
+  reported, and saved), but it does not yet change any trajectory. Note the
+  Reynolds-dependent drag model uses the **air** viscosity `μ_air`
+  (`Re = ρ_air·|v|·2r / μ_air`), *not* the liquid's — so the sprayed liquid's
+  viscosity still has no effect on flight. In a fuller model it would govern
+  **atomisation** — how the sheet breaks up and what droplet sizes form — and
+  could feed the orifice discharge coefficient at low Reynolds numbers. Here the
+  droplet size distribution is still an **input** (see the
+  [sprayer parameters](sprayer_parameters.md)), so changing a liquid's viscosity
+  alone leaves the result unchanged; changing its density does not. Liquid
+  viscosity is in place as the hook for those future effects.
 - **Surface tension** is not modelled at all.
 - Properties are treated as constant (incompressible, isothermal). No temperature
   or evaporation effects.

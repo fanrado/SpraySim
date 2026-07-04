@@ -84,8 +84,12 @@ Droplet radii are drawn from a configurable **`normal`** (Gaussian) or
 and standard deviation. `E[r³]` (which sets the droplet count) is computed
 analytically for each distribution:
 
-- **normal:** `E[r³] = m³ + 3·m·s²` (valid while `s ≪ m`; the tiny negative tail
-  is clipped, so the analytic value drifts for very wide distributions)
+- **normal:** the sampler clips radii at 0, so `E[r³]` is the partial
+  (clipped-at-0) third moment, which matches the sampled droplets at any spread:
+  `Φ(m/s)·(m³ + 3ms²) + φ(m/s)·s·(m² + 2s²)` (Φ, φ are the standard normal CDF and
+  PDF). It reduces to `m³ + 3ms²` when `s ≪ m`. A wide normal (`m/s` small) also
+  clips many radii to ~0, which is unphysical — the code warns and suggests
+  `lognormal`.
 - **lognormal:** `E[r³] = exp(3μ + 4.5σ²)`, with `σ² = ln(1 + (s/m)²)`,
   `μ = ln m − σ²/2`
 

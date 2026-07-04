@@ -95,11 +95,15 @@ Both distributions are parameterised by the **linear-space mean and std**; the
 model converts these to the underlying parameters and uses a closed form for
 `E[r³]`:
 
-- **normal:** `E[r³] = m³ + 3·m·s²` (valid while `s ≪ m`; tiny negative tail clipped)
+- **normal:** the clipped-at-0 partial third moment
+  `Φ(m/s)·(m³+3ms²) + φ(m/s)·s·(m²+2s²)` (matches the sampled droplets at any
+  spread; reduces to `m³+3ms²` for `s ≪ m`)
 - **lognormal:** `E[r³] = exp(3μ + 4.5σ²)`, with `σ² = ln(1 + (s/m)²)`, `μ = ln m − σ²/2`
 
 Use `normal` for a tight, symmetric mist and `lognormal` for a realistic
-right-skewed spray with a tail of larger drops.
+right-skewed spray with a tail of larger drops. A wide `normal` (`radius_std`
+comparable to `mean_radius`) clips many radii to ~0 and **warns** — prefer
+`lognormal` there.
 
 ---
 

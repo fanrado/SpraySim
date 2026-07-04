@@ -43,7 +43,7 @@ class Simulator:
         phys = cfg.physics
         rng = np.random.default_rng(cfg.seed)
 
-        nozzle = Nozzle(cfg.nozzle, phys.water_density)
+        nozzle = Nozzle(cfg.nozzle, cfg.material.density)
 
         # Droplet count: explicit override, or derived from the hydraulics.
         droplets_capped = False
@@ -61,9 +61,9 @@ class Simulator:
 
         # Per-droplet drag factor k so that a_drag = -k * |v| * v.
         # Derived from F_drag = 0.5 * rho_air * Cd * A * |v| * v with
-        # A = pi r^2 and m = rho_water * (4/3) pi r^3.
+        # A = pi r^2 and m = rho_liquid * (4/3) pi r^3.
         k = (3.0 * phys.air_density * phys.drag_coefficient) / (
-            8.0 * phys.water_density * radii
+            8.0 * cfg.material.density * radii
         )
         gravity = np.array([0.0, 0.0, -phys.gravity])
 

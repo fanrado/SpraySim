@@ -62,6 +62,8 @@ DT="${DT:-0.001}"
 SEED="${SEED:-42}"
 OUT="${OUT:-output/spray_summary.png}"
 NO_PLOT="${NO_PLOT:-false}"
+DATA="${DATA:-output/spray_data.npz}"
+NO_DATA="${NO_DATA:-false}"
 DROPLETS="${DROPLETS:-}"
 
 # Assemble the run.py invocation.
@@ -78,7 +80,8 @@ CMD=("$PYTHON" run.py
     --speed-spread "$SPEED_SPREAD"
     --dt "$DT"
     --seed "$SEED"
-    --out "$OUT")
+    --out "$OUT"
+    --data "$DATA")
 
 # Only pin an explicit droplet count if the config set one.
 if [[ -n "$DROPLETS" ]]; then
@@ -87,6 +90,10 @@ fi
 
 if [[ "$NO_PLOT" == "true" ]]; then
     CMD+=(--no-plot)
+fi
+
+if [[ "$NO_DATA" == "true" ]]; then
+    CMD+=(--no-data)
 fi
 
 # Pass through any extra CLI args (e.g. ./main.sh default --no-plot).

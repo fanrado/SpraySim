@@ -8,6 +8,7 @@ import numpy as np
 
 from .config import SimConfig
 from .nozzle import Nozzle
+from . import hydraulics
 
 
 @dataclass
@@ -21,6 +22,10 @@ class SimResult:
     launch_speeds: np.ndarray       # (n,) initial speed (m/s)
     trajectories: list[np.ndarray]  # sampled full paths, each (steps, 3)
     landed: np.ndarray              # (n,) bool, False if it timed out mid-air
+    # Derived nozzle hydraulics (constant for the run).
+    exit_speed: float = 0.0         # m/s, pressure-derived launch speed
+    flow_rate: float = 0.0          # m^3/s, volumetric flow through the orifice
+    droplets_capped: bool = False   # True if the derived count hit max_droplets
 
     @property
     def n(self) -> int:
@@ -38,8 +43,20 @@ class Simulator:
         phys = cfg.physics
         rng = np.random.default_rng(cfg.seed)
 
-        nozzle = Nozzle(cfg.nozzle)
-        pos, vel, radii = nozzle.emit(cfg.n_droplets, rng)
+        nozzle = Nozzle(cfg.nozzle, phys.water_density)
+
+        # Droplet count: explicit override, or derived from the hydraulics.
+        droplets_capped = False
+        if cfg.n_droplets is not None:
+            n = int(cfg.n_droplets)
+        else:
+            raw_n = hydraulics.droplet_count(
+                nozzle.flow_rate, cfg.spray_duration, nozzle.mean_droplet_volume()
+            )
+            n = min(raw_n, cfg.max_droplets)
+            droplets_capped = raw_n > cfg.max_droplets
+
+        pos, vel, radii = nozzle.emit(n, rng)
         launch_speeds = np.linalg.norm(vel, axis=1)
 
         # Per-droplet drag factor k so that a_drag = -k * |v| * v.
@@ -50,7 +67,6 @@ class Simulator:
         )
         gravity = np.array([0.0, 0.0, -phys.gravity])
 
-        n = cfg.n_droplets
         active = np.ones(n, dtype=bool)
         time_aloft = np.zeros(n)
 
@@ -124,4 +140,7 @@ class Simulator:
             launch_speeds=launch_speeds,
             trajectories=trajectories,
             landed=landed,
+            exit_speed=nozzle.exit_speed,
+            flow_rate=nozzle.flow_rate,
+            droplets_capped=droplets_capped,
         )

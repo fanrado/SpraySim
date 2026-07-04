@@ -97,7 +97,9 @@ class Simulator:
                 break
 
             a = active.copy()  # snapshot: active is mutated as droplets land
-            speed = np.linalg.norm(vel[a], axis=1)
+            pos_a = pos[a]
+            v_before = vel[a]  # velocity at the start of the step (copy)
+            speed = np.linalg.norm(v_before, axis=1)
 
             # Drag factor for the active droplets this step.
             if constant_drag:
@@ -107,32 +109,37 @@ class Simulator:
                                           phys.air_viscosity)
                 k_a = k_base[a] * drag.drag_coefficient(Re, phys.drag_model)
 
-            accel = gravity - (k_a * speed)[:, None] * vel[a]
+            accel = gravity - (k_a * speed)[:, None] * v_before
 
             # Semi-implicit (symplectic) Euler: update velocity, then position.
-            vel[a] += accel * dt
-            new_pos = pos[a] + vel[a] * dt
+            v_after = v_before + accel * dt
+            new_pos = pos_a + v_after * dt
 
             # Detect ground crossing and clamp to the exact impact point.
             below = new_pos[:, 2] <= phys.ground_z
             act_idx = np.nonzero(a)[0]
 
             if below.any():
-                z0 = pos[a][below, 2]
+                z0 = pos_a[below, 2]
                 z1 = new_pos[below, 2]
                 # Linear fraction of the step at which z hits ground_z.
                 frac = (z0 - phys.ground_z) / np.clip(z0 - z1, 1e-12, None)
                 frac = np.clip(frac, 0.0, 1.0)
-                hit = pos[a][below] + frac[:, None] * (new_pos[below] - pos[a][below])
+                hit = pos_a[below] + frac[:, None] * (new_pos[below] - pos_a[below])
                 hit[:, 2] = phys.ground_z
+                # Impact velocity at the crossing: interpolate between the pre-
+                # and post-step velocities at the same fraction as the position.
+                # (Reading v_after would sample a partial step too late.)
+                v_hit = v_before[below] + frac[:, None] * (v_after[below] - v_before[below])
 
                 landed_idx = act_idx[below]
                 landing_positions[landed_idx] = hit
-                impact_speeds[landed_idx] = np.linalg.norm(vel[a][below], axis=1)
+                impact_speeds[landed_idx] = np.linalg.norm(v_hit, axis=1)
                 time_aloft[landed_idx] += frac * dt
                 landed[landed_idx] = True
                 active[landed_idx] = False
 
+            vel[a] = v_after
             pos[a] = new_pos
             time_aloft[act_idx[~below]] += dt
 

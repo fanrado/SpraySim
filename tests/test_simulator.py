@@ -61,6 +61,30 @@ def test_vacuum_freefall_matches_analytic():
     assert result.flight_times[0] == pytest.approx(expected, rel=1e-2)
 
 
+def test_impact_speed_energy_consistent_at_crossing():
+    """Impact speed is reported at the ground crossing (P3), so in vacuum it must
+    satisfy energy conservation: |v| at z=0 is sqrt(u^2 + 2 g h), independent of
+    dt. Reading velocity a step late (the old behaviour) breaks this; the residual
+    must also shrink with dt."""
+    g, h = 9.81, 2.0
+
+    def run(dt):
+        noz = NozzleConfig(position=(0.0, 0.0, h), direction=(1, 0, 0),
+                           half_angle=0.0, pressure=5.0e5, speed_spread=0.0,
+                           distribution="normal", mean_radius=8e-4, radius_std=0.0)
+        cfg = SimConfig(n_droplets=1, dt=dt, max_time=20.0, seed=0, nozzle=noz,
+                        physics=PhysicsConfig(air_density=0.0))  # vacuum
+        r = Simulator(cfg).run()
+        return r.launch_speeds[0], r.impact_speeds[0]
+
+    u, v_fine = run(1e-3)
+    v_energy = math.sqrt(u * u + 2 * g * h)
+    assert v_fine == pytest.approx(v_energy, rel=5e-4)
+    # Finer dt lands closer to the exact energy value (O(dt) convergence).
+    _, v_coarse = run(2e-3)
+    assert abs(v_fine - v_energy) < abs(v_coarse - v_energy)
+
+
 def test_cone_directions_respect_half_angle():
     half = math.radians(20.0)
     cfg = NozzleConfig(direction=(0, 0, -1), half_angle=half, speed_spread=0.0)

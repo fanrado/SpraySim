@@ -19,7 +19,15 @@ import json
 import math
 from pathlib import Path
 
-from spraysim import SimConfig, NozzleConfig, PhysicsConfig, Simulator, analysis, plots
+from spraysim import (
+    SimConfig,
+    NozzleConfig,
+    PhysicsConfig,
+    Simulator,
+    analysis,
+    plots,
+    storage,
+)
 from spraysim.hydraulics import SHAPE_COEFFICIENTS
 
 
@@ -72,6 +80,9 @@ def main() -> None:
     p.add_argument("--out", type=Path, default=Path("output/spray_summary.png"),
                    help="output figure path")
     p.add_argument("--no-plot", action="store_true", help="skip figure generation")
+    p.add_argument("--data", type=Path, default=Path("output/spray_data.npz"),
+                   help="output .npz data path (result arrays + config)")
+    p.add_argument("--no-data", action="store_true", help="skip saving the .npz data")
     args = p.parse_args()
 
     config = build_config(args)
@@ -99,9 +110,13 @@ def main() -> None:
         print(f"\nNote: droplet count was capped at {config.max_droplets}. "
               "Lower --spray-duration or raise the cap for a full run.")
 
+    if not args.no_data:
+        data_path = storage.save_result(result, config, args.data)
+        print(f"\nData written to {data_path.resolve()}")
+
     if not args.no_plot:
         path = plots.save_figure(result, config, args.out)
-        print(f"\nFigure written to {path.resolve()}")
+        print(f"Figure written to {path.resolve()}")
 
 
 if __name__ == "__main__":

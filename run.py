@@ -36,6 +36,7 @@ from spraysim.materials import (
     material_density,
     material_viscosity,
 )
+from spraysim.drag import DRAG_MODELS, DEFAULT_DRAG_MODEL
 
 
 def build_config(args: argparse.Namespace) -> SimConfig:
@@ -68,7 +69,7 @@ def build_config(args: argparse.Namespace) -> SimConfig:
         seed=args.seed,
         nozzle=nozzle,
         material=material,
-        physics=PhysicsConfig(),
+        physics=PhysicsConfig(drag_model=args.drag_model),
     )
 
 
@@ -98,6 +99,10 @@ def main() -> None:
     p.add_argument("--mean-radius-mm", type=float, default=0.4, help="mean droplet radius (mm)")
     p.add_argument("--radius-std-mm", type=float, default=0.12,
                    help="std of droplet radius (mm)")
+    # Physics.
+    p.add_argument("--drag-model", default=DEFAULT_DRAG_MODEL, choices=list(DRAG_MODELS),
+                   help="droplet drag model: clift_gauvin (Reynolds-dependent) or "
+                        "constant (fixed Cd; legacy behaviour)")
     # Geometry / integration.
     p.add_argument("--cone", type=float, default=25.0, help="cone half-angle (degrees)")
     p.add_argument("--height", type=float, default=1.5, help="nozzle height (m)")
@@ -123,7 +128,8 @@ def main() -> None:
     print(f"Nozzle: {args.pressure_bar} bar, orifice {args.orifice_mm} mm, "
           f"{args.shape}, spraying for {args.spray_duration} s")
     print(f"Droplet size: {args.distribution}, "
-          f"mean {args.mean_radius_mm} mm +/- {args.radius_std_mm} mm\n")
+          f"mean {args.mean_radius_mm} mm +/- {args.radius_std_mm} mm")
+    print(f"Drag model: {config.physics.drag_model}\n")
 
     result = Simulator(config).run()
     stats = analysis.summarize(result, config)

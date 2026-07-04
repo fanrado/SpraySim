@@ -5,6 +5,13 @@ into a velocity cone; each droplet is integrated under **gravity** and
 **quadratic aerodynamic drag** until it lands on the ground plane. The output is
 numerical statistics plus static summary plots (no animation).
 
+A spray result is dictated by **two inputs**, each documented in detail:
+
+- [**Sprayer parameters**](docs/sprayer_parameters.md) — geometry, pressure,
+  orifice, nozzle shape, droplet-size distribution and run controls.
+- [**Material properties**](docs/material_properties.md) — the sprayed liquid and
+  its density.
+
 ## Physics model
 
 Each droplet is a sphere of the sprayed liquid. Two forces act on it:
@@ -191,6 +198,7 @@ storage.save_result(result, config, "output/custom.npz")  # reload later, no rec
 ## Project layout
 
 ```
+docs/            # reference docs: sprayer_parameters.md, material_properties.md
 config/          # *.conf presets (KEY=value) — the inputs you edit
 main.sh          # launcher: loads a config and runs the simulation
 spraysim/

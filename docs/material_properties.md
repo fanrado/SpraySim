@@ -5,9 +5,14 @@ is the [sprayer](sprayer_parameters.md)). It describes the *sprayed liquid* — 
 substance leaving the nozzle. The simulation is **not limited to water**: any
 liquid can be sprayed, and its properties feed directly into the physics.
 
-The single material property the model currently uses is **density**
-(`ρ_liquid`, kg/m³). It is defined in `spraysim/config.py` as `MaterialConfig`
-and backed by a small registry in `spraysim/materials.py`.
+A material carries two physical properties, defined in `spraysim/config.py` as
+`MaterialConfig` and backed by a registry in `spraysim/materials.py`:
+
+- **density** (`ρ_liquid`, kg/m³) — the property that currently drives the
+  physics (droplet mass and exit hydraulics).
+- **dynamic viscosity** (`μ_liquid`, Pa·s) — carried for custom-liquid
+  definitions and reporting; defaults to water's value and is **not yet coupled**
+  to the flight physics (see *Scope and limitations*).
 
 ---
 
@@ -18,47 +23,55 @@ plus an explicit density** for something not listed.
 
 | Parameter | Config key | CLI flag | Field | Unit | Default | Meaning |
 |-----------|-----------|----------|-------|------|---------|---------|
-| Material name | `MATERIAL` | `--material` | `MaterialConfig.name` | name | `water` | Selects a registry density and labels the run/output. |
+| Material name | `MATERIAL` | `--material` | `MaterialConfig.name` | name | `water` | Selects registry properties and labels the run/output. |
 | Density override | `DENSITY` | `--density` | `MaterialConfig.density` | kg/m³ | *(empty → registry default)* | Overrides the density for a custom or off-registry liquid. |
+| Viscosity override | `VISCOSITY` | `--viscosity` | `MaterialConfig.viscosity` | Pa·s | *(empty → registry value; custom → water)* | Overrides the dynamic viscosity. |
 
 ```bash
-# By name (registry density)
+# By name (registry density + viscosity)
 python run.py --material diesel
 
-# Custom liquid: any name + explicit density
+# Custom liquid: any name + explicit density (viscosity defaults to water's)
 python run.py --material glycol --density 1113
+
+# Custom liquid with its own viscosity too
+python run.py --material glycol --density 1113 --viscosity 0.0161
 ```
 
 ```python
 from spraysim import MaterialConfig, SimConfig, Simulator
-material = MaterialConfig(name="ethanol", density=789.0)
+material = MaterialConfig(name="ethanol", density=789.0, viscosity=1.2e-3)
 result = Simulator(SimConfig(material=material)).run()
 ```
 
 An unknown material name **without** a `--density` override fails with a clear
-error listing the known materials.
+error listing the known materials. Viscosity, by contrast, is optional for any
+liquid: if you do not give one, a registered material uses its registry value and
+a custom liquid falls back to **water's viscosity**.
 
 ---
 
 ## Built-in material registry
 
-Nominal densities near 15–20 °C, from `spraysim/materials.py`.
+Nominal values near ~20 °C, from `spraysim/materials.py`. Viscosity is dynamic
+(Pa·s); `1 mPa·s = 1e-3 Pa·s`.
 
-| Material | Density (kg/m³) | Notes |
-|----------|-----------------|-------|
-| `water` | 1000 | Reference liquid *(default)* |
-| `seawater` | 1025 | Slightly denser than fresh water |
-| `ethanol` | 789 | Light alcohol |
-| `methanol` | 792 | Light alcohol |
-| `acetone` | 784 | Light solvent |
-| `gasoline` | 745 | Lightest listed fuel |
-| `kerosene` | 810 | Fuel |
-| `diesel` | 832 | Fuel |
-| `olive_oil` | 915 | Viscous oil (only density is modelled) |
-| `glycerin` | 1260 | Densest listed liquid |
+| Material | Density (kg/m³) | Viscosity (Pa·s) | Notes |
+|----------|-----------------|------------------|-------|
+| `water` | 1000 | 1.00e-3 | Reference liquid *(default)* |
+| `seawater` | 1025 | 1.08e-3 | Slightly denser than fresh water |
+| `ethanol` | 789 | 1.20e-3 | Light alcohol |
+| `methanol` | 792 | 0.59e-3 | Light alcohol |
+| `acetone` | 784 | 0.32e-3 | Light, low-viscosity solvent |
+| `gasoline` | 745 | 0.60e-3 | Lightest listed fuel |
+| `kerosene` | 810 | 1.50e-3 | Fuel |
+| `diesel` | 832 | 2.50e-3 | Fuel |
+| `olive_oil` | 915 | 84.0e-3 | Viscous oil |
+| `glycerin` | 1260 | 1.41 | Densest, by far the most viscous |
 
-For anything else, pass `--density` (or set `MaterialConfig.density`) with the
-value for your liquid and temperature.
+For anything else, pass `--density` (and optionally `--viscosity`), or set the
+corresponding `MaterialConfig` fields, with the values for your liquid and
+temperature.
 
 ---
 
@@ -109,15 +122,21 @@ combined landing distance, which is exactly why running the sim is useful.
 
 ## Scope and limitations
 
-- **Only density is modelled.** Viscosity and surface tension are *not* part of
-  the current physics. They would matter for real atomisation — how the sheet
-  breaks up and what droplet sizes actually form — but here the droplet size
-  distribution is an **input** (see the sprayer parameters), not derived from the
-  liquid. Listing a viscous liquid like `olive_oil` only changes its density.
-- Density is treated as constant (incompressible, isothermal). No temperature or
-  evaporation effects.
-- The material name and density are saved into the `.npz` output, so every run is
-  fully reproducible and self-describing.
+- **Density drives the physics; viscosity is carried but not yet coupled.**
+  Viscosity is a first-class material property now (configurable per liquid,
+  reported, and saved), but it does not yet change any trajectory. In a fuller
+  model, liquid viscosity would govern **atomisation** — how the sheet breaks up
+  and what droplet sizes form — and could feed the orifice discharge coefficient
+  at low Reynolds numbers. Here the droplet size distribution is still an
+  **input** (see the [sprayer parameters](sprayer_parameters.md)), so changing a
+  liquid's viscosity alone leaves the result unchanged; changing its density does
+  not. Viscosity is in place as the hook for those future effects.
+- **Surface tension** is not modelled at all.
+- Properties are treated as constant (incompressible, isothermal). No temperature
+  or evaporation effects.
+- The material name, density and viscosity are saved into the `.npz` output, so
+  every run is fully reproducible and self-describing. Archives written before
+  viscosity existed still load, defaulting it to water's value.
 
 See [sprayer_parameters.md](sprayer_parameters.md) for the other half of the
 inputs.

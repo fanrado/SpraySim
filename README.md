@@ -44,6 +44,11 @@ name from a small registry (`water`, `seawater`, `ethanol`, `methanol`,
 any name together with an explicit density. A denser liquid exits more slowly
 for the same pressure (`v ∝ 1/√ρ_liquid`) but carries more momentum per drop.
 
+Each material also carries a **dynamic viscosity** (`μ_liquid`, Pa·s), defaulting
+to water's value. It is stored and reported but not yet coupled to the flight
+physics — it is the hook for future viscous/atomisation effects. See
+[docs/material_properties.md](docs/material_properties.md).
+
 ### Nozzle hydraulics (droplet count & exit speed)
 
 Rather than typing a droplet count and speed directly, both are **derived** from
@@ -105,6 +110,7 @@ cp config/default.conf config/my_run.conf
 |------------------|------------------------------------------------|---------------------|
 | `MATERIAL`       | sprayed liquid (name from the registry)        | `--material`        |
 | `DENSITY`        | *optional* liquid density override (kg/m³)     | `--density`         |
+| `VISCOSITY`      | *optional* dynamic viscosity override (Pa·s)   | `--viscosity`       |
 | `PRESSURE_BAR`   | nozzle pressure (bar)                          | `--pressure-bar`    |
 | `ORIFICE_MM`     | orifice diameter (mm)                          | `--orifice-mm`      |
 | `NOZZLE_SHAPE`   | shape → discharge/velocity coefficients        | `--shape`           |

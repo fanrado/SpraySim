@@ -1,6 +1,7 @@
 """Sanity tests for the spray simulator's physics and bookkeeping."""
 
 import math
+import warnings
 
 import numpy as np
 import pytest
@@ -167,13 +168,27 @@ def test_material_changes_simulation_outcome():
 
 
 def test_normal_and_lognormal_moments():
-    """mean_cubed_radius matches the sampled E[r^3] for both distributions."""
+    """mean_cubed_radius matches the sampled E[r^3], including a wide (heavily
+    clipped) normal where the naive m^3+3ms^2 would drift ~8%."""
     rng = np.random.default_rng(0)
-    for dist in ("normal", "lognormal"):
-        cfg = NozzleConfig(distribution=dist, mean_radius=4e-4, radius_std=1e-4)
-        nozzle = Nozzle(cfg, WATER)
-        sampled = np.mean(nozzle.sample_radii(200_000, rng) ** 3)
+    cases = [("normal", 4e-4, 1e-4), ("normal", 2e-4, 3e-4), ("lognormal", 4e-4, 1e-4)]
+    for dist, m, s in cases:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # the wide normal warns; not under test here
+            nozzle = Nozzle(NozzleConfig(distribution=dist, mean_radius=m, radius_std=s), WATER)
+            sampled = np.mean(nozzle.sample_radii(500_000, rng) ** 3)
         assert nozzle.mean_cubed_radius() == pytest.approx(sampled, rel=2e-2)
+
+
+def test_wide_normal_distribution_warns():
+    """A wide 'normal' spread (many radii clipped at 0) warns; narrow normal and
+    lognormal stay silent."""
+    with pytest.warns(UserWarning, match="clips"):
+        Nozzle(NozzleConfig(distribution="normal", mean_radius=2e-4, radius_std=2e-4), WATER)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any warning here fails the test
+        Nozzle(NozzleConfig(distribution="normal", mean_radius=4e-4, radius_std=1e-4), WATER)
+        Nozzle(NozzleConfig(distribution="lognormal", mean_radius=2e-4, radius_std=3e-4), WATER)
 
 
 def test_npz_round_trip_preserves_result_and_config(tmp_path):

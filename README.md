@@ -183,6 +183,22 @@ result, config = storage.load_result("output/spray_data.npz")
 
 Pass `--no-data` (or `NO_DATA=true`) to skip writing it.
 
+### PDF report from saved runs
+
+The `analysis/` folder turns saved `.npz` runs into a multi-page **PDF report**
+— offline, without re-running the simulation:
+
+```bash
+python analysis/report.py                       # all output/*.npz -> output/spray_report.pdf
+python analysis/report.py output/big_drops.npz  # a single run
+python analysis/report.py a.npz b.npz --out report.pdf
+```
+
+Each run contributes its 2×2 summary figure, an extra-analysis page (radial
+coverage CDF + size-vs-range scatter) and a config/stats page; with several runs
+the report opens with a side-by-side comparison table. See
+[analysis/README.md](analysis/README.md).
+
 ## Use as a library
 
 ```python
@@ -205,6 +221,7 @@ storage.save_result(result, config, "output/custom.npz")  # reload later, no rec
 
 ```
 docs/            # reference docs: sprayer_parameters.md, material_properties.md
+analysis/        # offline analysis of saved runs -> PDF report (report.py)
 config/          # *.conf presets (KEY=value) — the inputs you edit
 main.sh          # launcher: loads a config and runs the simulation
 spraysim/

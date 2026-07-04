@@ -9,17 +9,25 @@ from dataclasses import dataclass, field
 import math
 
 from .hydraulics import DEFAULT_SHAPE
+from .materials import DEFAULT_MATERIAL, material_density
 
 
 @dataclass
 class PhysicsConfig:
-    """Environmental / fluid constants used by the integrator."""
+    """Environmental constants used by the integrator (the surrounding air)."""
 
     gravity: float = 9.81           # m/s^2, acts along -z
     air_density: float = 1.225      # kg/m^3 at sea level, 15 C
-    water_density: float = 1000.0   # kg/m^3, droplet material
     drag_coefficient: float = 0.47  # dimensionless, sphere
     ground_z: float = 0.0           # m, height of the impact plane
+
+
+@dataclass
+class MaterialConfig:
+    """The sprayed liquid. Its density sets droplet mass and exit hydraulics."""
+
+    name: str = DEFAULT_MATERIAL              # label; picks a default density
+    density: float = material_density(DEFAULT_MATERIAL)  # kg/m^3
 
 
 @dataclass
@@ -69,4 +77,5 @@ class SimConfig:
     seed: int | None = 42
 
     physics: PhysicsConfig = field(default_factory=PhysicsConfig)
+    material: MaterialConfig = field(default_factory=MaterialConfig)
     nozzle: NozzleConfig = field(default_factory=NozzleConfig)

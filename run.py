@@ -23,15 +23,20 @@ from spraysim import (
     SimConfig,
     NozzleConfig,
     PhysicsConfig,
+    MaterialConfig,
     Simulator,
     analysis,
     plots,
     storage,
 )
 from spraysim.hydraulics import SHAPE_COEFFICIENTS
+from spraysim.materials import MATERIALS, material_density
 
 
 def build_config(args: argparse.Namespace) -> SimConfig:
+    # Material density: explicit --density overrides the named material's default.
+    density = args.density if args.density is not None else material_density(args.material)
+    material = MaterialConfig(name=args.material, density=density)
     nozzle = NozzleConfig(
         position=(0.0, 0.0, args.height),
         half_angle=math.radians(args.cone),
@@ -49,6 +54,7 @@ def build_config(args: argparse.Namespace) -> SimConfig:
         dt=args.dt,
         seed=args.seed,
         nozzle=nozzle,
+        material=material,
         physics=PhysicsConfig(),
     )
 
@@ -64,6 +70,12 @@ def main() -> None:
                    help="how long the nozzle is open (s); scales droplet count")
     p.add_argument("--droplets", type=int, default=None,
                    help="override the derived droplet count with an explicit number")
+    # Sprayed liquid material (density drives droplet mass and exit hydraulics).
+    p.add_argument("--material", default="water",
+                   help="sprayed liquid; known: " + ", ".join(sorted(MATERIALS))
+                        + " (or any name with --density)")
+    p.add_argument("--density", type=float, default=None,
+                   help="liquid density (kg/m^3); overrides the material's default")
     # Droplet size distribution.
     p.add_argument("--distribution", default="lognormal", choices=["normal", "lognormal"],
                    help="droplet radius distribution")
@@ -85,8 +97,12 @@ def main() -> None:
     p.add_argument("--no-data", action="store_true", help="skip saving the .npz data")
     args = p.parse_args()
 
-    config = build_config(args)
+    try:
+        config = build_config(args)
+    except KeyError as exc:
+        p.error(str(exc).strip('"'))
 
+    print(f"Material: {config.material.name} ({config.material.density:g} kg/m^3)")
     print(f"Nozzle: {args.pressure_bar} bar, orifice {args.orifice_mm} mm, "
           f"{args.shape}, spraying for {args.spray_duration} s")
     print(f"Droplet size: {args.distribution}, "

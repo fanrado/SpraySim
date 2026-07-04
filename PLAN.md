@@ -135,7 +135,19 @@ existing "valid while std ≪ mean" comment.
 
 ---
 
-## P3 — Impact speed evaluated at end-of-step, not at ground crossing
+## P3 — Impact speed evaluated at end-of-step, not at ground crossing  ✅ DONE
+
+Implemented in `spraysim/simulator.py`: snapshot the pre-step velocity and
+interpolate the impact velocity to the same `frac` used for the landing position,
+so speed and position are reported at the *same* crossing instant (previously
+velocity was read a full step later). This is primarily a **consistency** fix —
+whether it reduces error vs a fixed analytic value is scenario-dependent because
+semi-implicit Euler has its own O(dt) position bias, but it removes the one-step
+lag and, in drag-dominated cases, tightens impact speed vs the dt→0 reference
+(~0.30% → ~0.23% at dt=1e-3). Validated by a vacuum energy-conservation test:
+impact speed matches `sqrt(u²+2gh)` to 0.0033% at dt=1e-3, converging O(dt).
+Non-landing trajectories are unchanged (constant-model reproduction preserved).
+
 
 ### Problem
 `spraysim/simulator.py:114` interpolates the landing **position** to the exact

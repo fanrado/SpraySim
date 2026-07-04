@@ -97,6 +97,20 @@ def test_material_density_registry():
         materials.material_density("unobtanium")
 
 
+def test_material_viscosity_registry_and_default():
+    """Every material has a viscosity; the config default is water's viscosity."""
+    assert materials.material_viscosity("water") == materials.DEFAULT_VISCOSITY
+    # A viscosity is defined for every registered material.
+    for name in materials.MATERIALS:
+        assert materials.material_viscosity(name) > 0.0
+    # Glycerin is far more viscous than water.
+    assert materials.material_viscosity("glycerin") > materials.material_viscosity("water")
+    # Unspecified material viscosity defaults to water's.
+    assert MaterialConfig().viscosity == materials.material_viscosity("water")
+    with pytest.raises(KeyError):
+        materials.material_viscosity("unobtanium")
+
+
 def test_denser_liquid_lowers_exit_speed():
     """Torricelli: v = C_v sqrt(2 dP / rho), so exit speed scales as 1/sqrt(rho)."""
     light = hydraulics.exit_speed(3.0e5, "full_cone", 800.0)
@@ -130,7 +144,7 @@ def test_normal_and_lognormal_moments():
 def test_npz_round_trip_preserves_result_and_config(tmp_path):
     """Saving to .npz and loading back reproduces arrays, trajectories, config."""
     cfg = SimConfig(n_droplets=300, seed=11,
-                    material=MaterialConfig("ethanol", 789.0))
+                    material=MaterialConfig("ethanol", 789.0, 1.2e-3))
     result = Simulator(cfg).run()
 
     path = storage.save_result(result, cfg, tmp_path / "run.npz")
@@ -158,6 +172,7 @@ def test_npz_round_trip_preserves_result_and_config(tmp_path):
     assert loaded_cfg.nozzle.pressure == pytest.approx(cfg.nozzle.pressure)
     assert loaded_cfg.material.name == cfg.material.name
     assert loaded_cfg.material.density == pytest.approx(cfg.material.density)
+    assert loaded_cfg.material.viscosity == pytest.approx(cfg.material.viscosity)
     rerun = Simulator(loaded_cfg).run()
     assert np.array_equal(rerun.landing_positions, result.landing_positions)
 

@@ -39,6 +39,23 @@ python analysis/report.py --glob "output/*.npz" --out output/spray_report.pdf
 Archives that can't be read (e.g. an older, incompatible format, or a foreign
 `.npz`) are skipped with a warning rather than aborting the whole report.
 
+## `validate.py` — physics validation
+
+Runs the simulator against closed-form benchmarks and prints a pass/fail table,
+exiting non-zero if any check fails:
+
+```bash
+python analysis/validate.py
+```
+
+Checks: vacuum free-fall, terminal velocity (both the constant and Clift-Gauvin
+drag models), the `Cd(Re)` Stokes/Newton limits, O(dt) timestep convergence, drag
+monotonicity, the Torricelli / density-scaling hydraulics identities, impact-speed
+energy consistency at the ground crossing, and the clipped-normal `E[r^3]`
+correction. The cheap deterministic checks are also asserted in
+`tests/test_simulator.py`; this script keeps the full battery (including the
+slower terminal-velocity runs) in one runnable place. Takes a few seconds.
+
 ## Prerequisites
 
 Uses `numpy` and `matplotlib` from `requirements.txt` — no extra dependencies.

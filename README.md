@@ -7,17 +7,17 @@ numerical statistics plus static summary plots (no animation).
 
 ## Physics model
 
-Each droplet is a sphere of water. Two forces act on it:
+Each droplet is a sphere of the sprayed liquid. Two forces act on it:
 
 - **Gravity:** `a = -g ẑ`
 - **Aerodynamic drag:** `F = -½ ρ_air C_d A |v| v`, with cross-section
-  `A = π r²` and mass `m = ρ_water · (4/3) π r³`.
+  `A = π r²` and mass `m = ρ_liquid · (4/3) π r³`.
 
 Combining drag into a per-droplet factor gives the acceleration used by the
 integrator:
 
 ```
-a_drag = -k |v| v,   k = 3 ρ_air C_d / (8 ρ_water r)
+a_drag = -k |v| v,   k = 3 ρ_air C_d / (8 ρ_liquid r)
 ```
 
 Smaller droplets have a larger `k`, so they decelerate faster and travel less —
@@ -26,6 +26,16 @@ the physical reason a fine mist stays close while big drops fly further.
 Integration uses **semi-implicit (symplectic) Euler** with a fixed timestep, and
 the ground impact is found by linearly interpolating the crossing point within
 the final step.
+
+### Material (sprayed liquid)
+
+The simulation is not limited to water: the sprayed liquid is a configurable
+**material** whose density `ρ_liquid` feeds both the droplet mass in the drag
+term above and the Torricelli exit speed / flow rate below. Pick a liquid by
+name from a small registry (`water`, `seawater`, `ethanol`, `methanol`,
+`acetone`, `gasoline`, `kerosene`, `diesel`, `olive_oil`, `glycerin`) or give
+any name together with an explicit density. A denser liquid exits more slowly
+for the same pressure (`v ∝ 1/√ρ_liquid`) but carries more momentum per drop.
 
 ### Nozzle hydraulics (droplet count & exit speed)
 
@@ -86,6 +96,8 @@ cp config/default.conf config/my_run.conf
 
 | Key              | Meaning                                        | `run.py` flag       |
 |------------------|------------------------------------------------|---------------------|
+| `MATERIAL`       | sprayed liquid (name from the registry)        | `--material`        |
+| `DENSITY`        | *optional* liquid density override (kg/m³)     | `--density`         |
 | `PRESSURE_BAR`   | nozzle pressure (bar)                          | `--pressure-bar`    |
 | `ORIFICE_MM`     | orifice diameter (mm)                          | `--orifice-mm`      |
 | `NOZZLE_SHAPE`   | shape → discharge/velocity coefficients        | `--shape`           |
@@ -108,9 +120,9 @@ Droplet **count** and **exit speed** are derived from `PRESSURE_BAR`,
 `ORIFICE_MM` and `NOZZLE_SHAPE` (see *Nozzle hydraulics* above); leave
 `DROPLETS` empty to use that derivation, or set it to pin an explicit count.
 
-Shipped presets: `default`, `fine_mist` (low-pressure hollow-cone atomiser, small
-Gaussian droplets) and `big_drops` (high-pressure flat-fan, large lognormal
-droplets).
+Shipped presets: `default` (water), `fine_mist` (low-pressure hollow-cone
+atomiser spraying ethanol, small Gaussian droplets) and `big_drops`
+(high-pressure flat-fan water, large lognormal droplets).
 
 ### Calling `run.py` directly
 
@@ -118,8 +130,9 @@ droplets).
 run the Python CLI directly for ad-hoc experiments:
 
 ```bash
-python run.py                                              # default nozzle
-python run.py --pressure-bar 5 --orifice-mm 1.2 --shape flat_fan
+python run.py                                              # default nozzle (water)
+python run.py --material diesel --pressure-bar 5 --shape flat_fan
+python run.py --material glycol --density 1113            # custom liquid by density
 python run.py --distribution normal --mean-radius-mm 0.3 --radius-std-mm 0.08
 python run.py --droplets 5000 --no-plot                   # pin count, stats only
 ```
@@ -160,11 +173,13 @@ Pass `--no-data` (or `NO_DATA=true`) to skip writing it.
 ## Use as a library
 
 ```python
-from spraysim import SimConfig, NozzleConfig, Simulator, analysis, plots, storage
+from spraysim import (SimConfig, NozzleConfig, MaterialConfig,
+                      Simulator, analysis, plots, storage)
 
 nozzle = NozzleConfig(pressure=5.0e5, orifice_diameter=1.0e-3, shape="flat_fan",
                       distribution="normal", mean_radius=3.0e-4, radius_std=8.0e-5)
-config = SimConfig(nozzle=nozzle, spray_duration=0.2)  # droplet count derived
+material = MaterialConfig(name="diesel", density=832.0)  # spray something other than water
+config = SimConfig(nozzle=nozzle, material=material, spray_duration=0.2)  # count derived
 result = Simulator(config).run()
 
 print("exit speed:", result.exit_speed, "m/s  droplets:", result.n)
@@ -179,7 +194,8 @@ storage.save_result(result, config, "output/custom.npz")  # reload later, no rec
 config/          # *.conf presets (KEY=value) — the inputs you edit
 main.sh          # launcher: loads a config and runs the simulation
 spraysim/
-  config.py      # dataclasses: PhysicsConfig, NozzleConfig, SimConfig
+  config.py      # dataclasses: PhysicsConfig, MaterialConfig, NozzleConfig, SimConfig
+  materials.py   # sprayed-liquid registry (name -> density)
   hydraulics.py  # pressure/orifice/shape -> exit speed, flow rate, droplet count
   nozzle.py      # samples initial positions, cone velocities, droplet radii
   simulator.py   # vectorised integrator -> SimResult

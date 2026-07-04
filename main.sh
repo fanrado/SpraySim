@@ -50,6 +50,7 @@ source "$CONFIG"
 # Fall back to sensible defaults for anything the config didn't set.
 MATERIAL="${MATERIAL:-water}"
 DENSITY="${DENSITY:-}"
+VISCOSITY="${VISCOSITY:-}"
 PRESSURE_BAR="${PRESSURE_BAR:-3.0}"
 ORIFICE_MM="${ORIFICE_MM:-0.8}"
 NOZZLE_SHAPE="${NOZZLE_SHAPE:-full_cone}"
@@ -89,6 +90,11 @@ CMD=("$PYTHON" run.py
 # Only override the material's default density if the config set one.
 if [[ -n "$DENSITY" ]]; then
     CMD+=(--density "$DENSITY")
+fi
+
+# Only override the material's default viscosity if the config set one.
+if [[ -n "$VISCOSITY" ]]; then
+    CMD+=(--viscosity "$VISCOSITY")
 fi
 
 # Only pin an explicit droplet count if the config set one.

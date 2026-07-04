@@ -1,10 +1,19 @@
-"""Droplet emitter: samples initial positions, velocities and radii."""
+"""Droplet emitter: samples initial positions, velocities and radii.
+
+The exit speed is derived from the nozzle pressure and shape via
+:mod:`spraysim.hydraulics`; only the droplet-size distribution is sampled here.
+"""
 
 from __future__ import annotations
+
+import math
 
 import numpy as np
 
 from .config import NozzleConfig
+from . import hydraulics
+
+_MIN_RADIUS = 1.0e-9  # m, floor to keep radii strictly positive after clipping
 
 
 def _orthonormal_basis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -18,12 +27,63 @@ def _orthonormal_basis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.nda
     return u, v, w
 
 
+def _lognormal_params(mean: float, std: float) -> tuple[float, float]:
+    """Underlying-normal (mu, sigma) of a log-normal with the given linear mean/std."""
+    sigma2 = math.log(1.0 + (std / mean) ** 2)
+    sigma = math.sqrt(sigma2)
+    mu = math.log(mean) - 0.5 * sigma2
+    return mu, sigma
+
+
 class Nozzle:
     """Emits droplets into a cone around a spray axis."""
 
-    def __init__(self, config: NozzleConfig):
+    def __init__(self, config: NozzleConfig, water_density: float):
         self.config = config
+        self.water_density = water_density
         self._u, self._v, self._w = _orthonormal_basis(np.asarray(config.direction, float))
+
+        # Derived hydraulics (constant for the run).
+        self.exit_speed = hydraulics.exit_speed(config.pressure, config.shape, water_density)
+        self.flow_rate = hydraulics.flow_rate(
+            config.pressure, config.orifice_diameter, config.shape, water_density
+        )
+
+    # -- droplet size distribution -------------------------------------------
+
+    def sample_radii(self, n: int, rng: np.random.Generator) -> np.ndarray:
+        """Draw ``n`` droplet radii (m) from the configured distribution."""
+        cfg = self.config
+        if cfg.distribution == "normal":
+            radii = rng.normal(cfg.mean_radius, cfg.radius_std, size=n)
+            return np.clip(radii, _MIN_RADIUS, None)
+        if cfg.distribution == "lognormal":
+            mu, sigma = _lognormal_params(cfg.mean_radius, cfg.radius_std)
+            return rng.lognormal(mean=mu, sigma=sigma, size=n)
+        raise ValueError(
+            f"Unknown distribution {cfg.distribution!r}; use 'normal' or 'lognormal'."
+        )
+
+    def mean_cubed_radius(self) -> float:
+        """Analytic E[r^3] of the size distribution (drives droplet volume)."""
+        cfg = self.config
+        m, s = cfg.mean_radius, cfg.radius_std
+        if cfg.distribution == "normal":
+            # Raw third moment of a Gaussian (clipping of the tiny negative tail
+            # is neglected; valid while std << mean).
+            return m**3 + 3.0 * m * s**2
+        if cfg.distribution == "lognormal":
+            mu, sigma = _lognormal_params(m, s)
+            return math.exp(3.0 * mu + 4.5 * sigma**2)
+        raise ValueError(
+            f"Unknown distribution {cfg.distribution!r}; use 'normal' or 'lognormal'."
+        )
+
+    def mean_droplet_volume(self) -> float:
+        """Mean volume (m^3) of a droplet: (4/3) pi E[r^3]."""
+        return (4.0 / 3.0) * math.pi * self.mean_cubed_radius()
+
+    # -- emission ------------------------------------------------------------
 
     def emit(self, n: int, rng: np.random.Generator):
         """Sample ``n`` droplets.
@@ -50,15 +110,11 @@ class Nozzle:
             + cos_theta[:, None] * self._w
         )
 
-        # Speeds: positive, normally distributed around the exit speed.
-        speeds = rng.normal(cfg.exit_speed, cfg.exit_speed * cfg.speed_spread, size=n)
+        # Speeds: positive, spread around the pressure-derived exit speed.
+        speeds = rng.normal(self.exit_speed, self.exit_speed * cfg.speed_spread, size=n)
         speeds = np.clip(speeds, 0.0, None)
         velocities = dirs * speeds[:, None]
 
-        # Radii: log-normal so the distribution is positive and right-skewed.
-        sigma = cfg.radius_spread
-        mu = np.log(cfg.mean_radius) - 0.5 * sigma**2  # keeps the mean at mean_radius
-        radii = rng.lognormal(mean=mu, sigma=sigma, size=n)
-
+        radii = self.sample_radii(n, rng)
         positions = np.tile(np.asarray(cfg.position, float), (n, 1))
         return positions, velocities, radii

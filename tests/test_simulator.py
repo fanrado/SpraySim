@@ -14,11 +14,22 @@ from spraysim import (
     analysis,
     hydraulics,
     materials,
+    drag,
     storage,
 )
 from spraysim.nozzle import Nozzle
 
 WATER = 1000.0
+
+
+def _terminal_speed(radius, drag_model, height=30.0, dt=1e-3, max_time=30.0):
+    """Impact speed of a droplet released from rest — i.e. its terminal speed."""
+    noz = NozzleConfig(position=(0.0, 0.0, height), direction=(0, 0, -1),
+                       half_angle=0.0, pressure=0.0, speed_spread=0.0,
+                       distribution="normal", mean_radius=radius, radius_std=0.0)
+    cfg = SimConfig(n_droplets=1, dt=dt, max_time=max_time, seed=0, nozzle=noz,
+                    physics=PhysicsConfig(drag_model=drag_model))
+    return Simulator(cfg).run().impact_speeds[0]
 
 
 def test_all_droplets_land_within_bounds():
@@ -187,6 +198,63 @@ def test_npz_round_trip_with_derived_count(tmp_path):
 
     assert loaded_cfg.n_droplets is None
     assert loaded_cfg.spray_duration == pytest.approx(cfg.spray_duration)
+
+
+def test_drag_coefficient_limits():
+    """Clift-Gauvin reduces to Stokes (24/Re) at low Re and ~Newton at high Re."""
+    lo = float(drag.clift_gauvin(np.array(0.01)))
+    assert lo == pytest.approx(24.0 / 0.01, rel=0.02)  # Stokes limit
+    hi = float(drag.clift_gauvin(np.array(1e5)))
+    assert 0.35 < hi < 0.55                              # Newton plateau
+    # "constant" model ignores Re and returns the given coefficient.
+    assert float(drag.drag_coefficient(np.array(123.0), "constant", 0.47)) == 0.47
+    with pytest.raises(ValueError):
+        drag.drag_coefficient(np.array(1.0), "no_such_model")
+
+
+def test_constant_model_matches_legacy_terminal_velocity():
+    """The 'constant' model reproduces the pre-P1 terminal velocity v_t=sqrt(g/k)."""
+    r = 8e-4
+    k = 3.0 * 1.225 * 0.47 / (8.0 * WATER * r)
+    v_expected = math.sqrt(9.81 / k)
+    assert _terminal_speed(r, "constant") == pytest.approx(v_expected, rel=1e-3)
+
+
+def test_reynolds_drag_matches_fixed_point_and_slows_small_drops():
+    """clift_gauvin terminal speed matches a Cd(Re) fixed-point solve, and is
+    below the constant-Cd value (fine droplets are slowed more)."""
+    r = 8e-4
+    # Fixed-point solve of g = k(Cd(Re)) v^2 with the same correlation.
+    v = 5.0
+    for _ in range(200):
+        Re = 1.225 * v * 2 * r / drag.DEFAULT_AIR_VISCOSITY
+        cd = float(drag.clift_gauvin(np.array(Re)))
+        v = math.sqrt(9.81 / (3.0 * 1.225 * cd / (8.0 * WATER * r)))
+    assert _terminal_speed(r, "clift_gauvin") == pytest.approx(v, rel=1e-2)
+    # More drag than the constant model for a small droplet.
+    assert _terminal_speed(2e-4, "clift_gauvin") < _terminal_speed(2e-4, "constant")
+
+
+def test_drag_fields_round_trip_and_old_archive_fallback(tmp_path):
+    """air_viscosity + drag_model round-trip; archives lacking them load as
+    the legacy constant-Cd model."""
+    cfg = SimConfig(n_droplets=50, seed=1,
+                    physics=PhysicsConfig(drag_model="clift_gauvin",
+                                          air_viscosity=1.9e-5))
+    result = Simulator(cfg).run()
+    path = storage.save_result(result, cfg, tmp_path / "run.npz")
+    _, loaded = storage.load_result(path)
+    assert loaded.physics.drag_model == "clift_gauvin"
+    assert loaded.physics.air_viscosity == pytest.approx(1.9e-5)
+
+    # Simulate a pre-P1 archive by stripping the new keys.
+    data = {k: v for k, v in np.load(path).items()
+            if k not in ("cfg_drag_model", "cfg_air_viscosity")}
+    old = tmp_path / "legacy.npz"
+    np.savez(old, **data)
+    _, legacy = storage.load_result(old)
+    assert legacy.physics.drag_model == "constant"
+    assert legacy.physics.air_viscosity == pytest.approx(drag.DEFAULT_AIR_VISCOSITY)
 
 
 def test_stats_are_consistent():

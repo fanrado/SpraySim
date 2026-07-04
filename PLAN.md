@@ -99,7 +99,15 @@ i.e. the existing `k` gains a per-step `Cd(Re)` factor instead of a constant.
 
 ---
 
-## P2 — Normal-distribution `E[r³]` clipping bias
+## P2 — Normal-distribution `E[r³]` clipping bias  ✅ DONE
+
+Implemented the exact fix (option 2) plus the guardrail (option 1) in
+`spraysim/nozzle.py`: `mean_cubed_radius` for the normal distribution now uses the
+partial (clipped-at-0) third moment
+`Φ(m/s)·(m³+3ms²) + φ(m/s)·s·(m²+2s²)`, which matches the clipped sampler for any
+`s/m` (verified <0.4% vs 500k samples up to s/m=1.5, was −7.9%). Additionally a
+warning fires when a wide normal clips >1% of radii at 0, suggesting `lognormal`
+(presets stay silent). Tests and docs updated.
 
 ### Problem
 `spraysim/nozzle.py:74` returns the analytic third moment `m³ + 3ms²` for the

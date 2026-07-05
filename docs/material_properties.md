@@ -5,7 +5,7 @@ is the [sprayer](sprayer_parameters.md)). It describes the *sprayed liquid* — 
 substance leaving the nozzle. The simulation is **not limited to water**: any
 liquid can be sprayed, and its properties feed directly into the physics.
 
-A material carries two physical properties, defined in `spraysim/config.py` as
+A material carries these properties, defined in `spraysim/config.py` as
 `MaterialConfig` and backed by a registry in `spraysim/materials.py`:
 
 - **density** (`ρ_liquid`, kg/m³) — the property that currently drives the
@@ -13,6 +13,10 @@ A material carries two physical properties, defined in `spraysim/config.py` as
 - **dynamic viscosity** (`μ_liquid`, Pa·s) — carried for custom-liquid
   definitions and reporting; defaults to water's value and is **not yet coupled**
   to the flight physics (see *Scope and limitations*).
+- **solids fraction** — the volume fraction of solid material in the prepared
+  **solution** (the rest is solvent that evaporates). It does not affect flight;
+  it sets the **dry deposited film thickness** = wet thickness × solids_fraction
+  (see the deposition analysis). `1.0` = pure liquid (wet == dry).
 
 ---
 
@@ -26,6 +30,7 @@ plus an explicit density** for something not listed.
 | Material name | `MATERIAL` | `--material` | `MaterialConfig.name` | name | `water` | Selects registry properties and labels the run/output. |
 | Density override | `DENSITY` | `--density` | `MaterialConfig.density` | kg/m³ | *(empty → registry default)* | Overrides the density for a custom or off-registry liquid. |
 | Viscosity override | `VISCOSITY` | `--viscosity` | `MaterialConfig.viscosity` | Pa·s | *(empty → registry value; custom → water)* | Overrides the dynamic viscosity. |
+| Solids fraction | `SOLIDS_FRACTION` | `--solids-fraction` | `MaterialConfig.solids_fraction` | volume fraction | `1.0` | Fraction of the solution that is solids; sets dry film thickness. |
 
 ```bash
 # By name (registry density + viscosity)
@@ -137,9 +142,10 @@ combined landing distance, which is exactly why running the sim is useful.
 - **Surface tension** is not modelled at all.
 - Properties are treated as constant (incompressible, isothermal). No temperature
   or evaporation effects.
-- The material name, density and viscosity are saved into the `.npz` output, so
-  every run is fully reproducible and self-describing. Archives written before
-  viscosity existed still load, defaulting it to water's value.
+- The material name, density, viscosity and solids fraction are saved into the
+  `.npz` output, so every run is fully reproducible and self-describing. Archives
+  written before a field existed still load, defaulting viscosity to water's and
+  solids fraction to `1.0`.
 
 See [sprayer_parameters.md](sprayer_parameters.md) for the other half of the
 inputs.

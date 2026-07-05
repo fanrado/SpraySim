@@ -32,11 +32,16 @@ class MaterialConfig:
     ``viscosity`` (dynamic, Pa*s) is carried for custom-liquid definitions and
     reporting; it defaults to water's value and is not yet coupled to the flight
     physics.
+
+    ``solids_fraction`` is the volume fraction of solid material in the prepared
+    solution (the rest is solvent that evaporates). It sets the *dry* deposited
+    film thickness = wet thickness * solids_fraction; ``1.0`` = pure liquid.
     """
 
     name: str = DEFAULT_MATERIAL              # label; picks default properties
     density: float = material_density(DEFAULT_MATERIAL)  # kg/m^3
     viscosity: float = DEFAULT_VISCOSITY      # Pa*s (dynamic); water by default
+    solids_fraction: float = 1.0              # volume fraction of solids (dry film)
 
 
 @dataclass

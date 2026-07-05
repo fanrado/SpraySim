@@ -50,7 +50,8 @@ def build_config(args: argparse.Namespace) -> SimConfig:
         viscosity = material_viscosity(args.material)
     else:
         viscosity = DEFAULT_VISCOSITY
-    material = MaterialConfig(name=args.material, density=density, viscosity=viscosity)
+    material = MaterialConfig(name=args.material, density=density, viscosity=viscosity,
+                              solids_fraction=args.solids_fraction)
     nozzle = NozzleConfig(
         position=(0.0, 0.0, args.height),
         half_angle=math.radians(args.cone),
@@ -93,6 +94,9 @@ def main() -> None:
     p.add_argument("--viscosity", type=float, default=None,
                    help="liquid dynamic viscosity (Pa*s); overrides the material's "
                         "default (custom liquids default to water's viscosity)")
+    p.add_argument("--solids-fraction", type=float, default=1.0,
+                   help="volume fraction of solids in the sprayed solution "
+                        "(sets dry film thickness; 1.0 = pure liquid)")
     # Droplet size distribution.
     p.add_argument("--distribution", default="lognormal", choices=["normal", "lognormal"],
                    help="droplet radius distribution")
@@ -124,7 +128,7 @@ def main() -> None:
         p.error(str(exc).strip('"'))
 
     print(f"Material: {config.material.name} ({config.material.density:g} kg/m^3, "
-          f"{config.material.viscosity:g} Pa*s)")
+          f"{config.material.viscosity:g} Pa*s, solids {config.material.solids_fraction:g})")
     print(f"Nozzle: {args.pressure_bar} bar, orifice {args.orifice_mm} mm, "
           f"{args.shape}, spraying for {args.spray_duration} s")
     print(f"Droplet size: {args.distribution}, "

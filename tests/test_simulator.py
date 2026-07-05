@@ -19,6 +19,7 @@ from spraysim import (
     storage,
 )
 from spraysim.nozzle import Nozzle
+from spraysim.simulator import SimResult
 
 WATER = 1000.0
 
@@ -225,7 +226,7 @@ def test_wide_normal_distribution_warns():
 def test_npz_round_trip_preserves_result_and_config(tmp_path):
     """Saving to .npz and loading back reproduces arrays, trajectories, config."""
     cfg = SimConfig(n_droplets=300, seed=11,
-                    material=MaterialConfig("ethanol", 789.0, 1.2e-3))
+                    material=MaterialConfig("ethanol", 789.0, 1.2e-3, solids_fraction=0.3))
     result = Simulator(cfg).run()
 
     path = storage.save_result(result, cfg, tmp_path / "run.npz")
@@ -254,6 +255,7 @@ def test_npz_round_trip_preserves_result_and_config(tmp_path):
     assert loaded_cfg.material.name == cfg.material.name
     assert loaded_cfg.material.density == pytest.approx(cfg.material.density)
     assert loaded_cfg.material.viscosity == pytest.approx(cfg.material.viscosity)
+    assert loaded_cfg.material.solids_fraction == pytest.approx(cfg.material.solids_fraction)
     rerun = Simulator(loaded_cfg).run()
     assert np.array_equal(rerun.landing_positions, result.landing_positions)
 
@@ -335,3 +337,60 @@ def test_stats_are_consistent():
     assert 0.0 <= stats.landed_fraction <= 1.0
     assert stats.coverage_radius_p90 >= stats.coverage_radius_p50 >= 0.0
     assert stats.mean_radius_mm > 0.0
+
+
+def _landed_result(positions, radii):
+    """A minimal SimResult with the given landings (all marked landed)."""
+    n = len(radii)
+    return SimResult(
+        landing_positions=np.asarray(positions, dtype=float),
+        flight_times=np.zeros(n),
+        impact_speeds=np.zeros(n),
+        radii=np.asarray(radii, dtype=float),
+        launch_speeds=np.zeros(n),
+        trajectories=[],
+        landed=np.ones(n, dtype=bool),
+    )
+
+
+def test_deposition_map_conserves_volume_and_thickness():
+    """A single cell over a known area gives thickness = deposited volume / area,
+    and the gridded wet volume equals the summed droplet volume."""
+    rng = np.random.default_rng(0)
+    n, r0, L = 1000, 2e-4, 0.5
+    xy = rng.uniform(0.0, L, size=(n, 2))
+    pos = np.column_stack([xy, np.zeros(n)])
+    result = _landed_result(pos, np.full(n, r0))
+    cfg = SimConfig(material=MaterialConfig(solids_fraction=1.0))
+
+    field = analysis.deposition_map(result, cfg, cell_size=L, extent=(0, L, 0, L))
+    droplet_vol = n * (4.0 / 3.0) * np.pi * r0 ** 3
+    assert field.thickness.shape == (1, 1)
+    assert field.total_wet_volume() == pytest.approx(droplet_vol, rel=1e-9)
+    assert field.thickness[0, 0] == pytest.approx(droplet_vol / L ** 2, rel=1e-9)
+
+
+def test_solids_fraction_scales_dry_thickness_only():
+    """Dry thickness scales with solids_fraction; wet volume is unchanged."""
+    rng = np.random.default_rng(1)
+    n, r0, L, sf = 500, 3e-4, 0.4, 0.25
+    pos = np.column_stack([rng.uniform(0, L, (n, 2)), np.zeros(n)])
+    result = _landed_result(pos, np.full(n, r0))
+    droplet_vol = n * (4.0 / 3.0) * np.pi * r0 ** 3
+
+    dry = analysis.deposition_map(
+        result, SimConfig(material=MaterialConfig(solids_fraction=sf)),
+        cell_size=L, extent=(0, L, 0, L))
+    assert dry.thickness[0, 0] == pytest.approx(sf * droplet_vol / L ** 2, rel=1e-9)
+    assert dry.total_dry_volume() == pytest.approx(sf * droplet_vol, rel=1e-9)
+    assert dry.total_wet_volume() == pytest.approx(droplet_vol, rel=1e-9)
+
+
+def test_deposition_map_total_matches_real_run():
+    """On a real run, the auto-extent grid captures the full sprayed volume."""
+    cfg = SimConfig(n_droplets=800, seed=4)
+    result = Simulator(cfg).run()
+    field = analysis.deposition_map(result, cfg)
+    landed = result.landed
+    expected = np.sum((4.0 / 3.0) * np.pi * result.radii[landed] ** 3)
+    assert field.total_wet_volume() == pytest.approx(expected, rel=1e-6)

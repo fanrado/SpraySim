@@ -43,6 +43,7 @@ def _flatten_config(cfg: SimConfig) -> dict[str, np.ndarray]:
         "cfg_material_name": mat.name,
         "cfg_material_density": mat.density,
         "cfg_material_viscosity": mat.viscosity,
+        "cfg_material_solids_fraction": mat.solids_fraction,
         # Nozzle
         "cfg_position": np.asarray(noz.position, dtype=float),
         "cfg_direction": np.asarray(noz.direction, dtype=float),
@@ -97,6 +98,9 @@ def _rebuild_config(z: np.lib.npyio.NpzFile) -> SimConfig:
             # Fall back to water's viscosity for archives written before it existed.
             viscosity=f("cfg_material_viscosity") if "cfg_material_viscosity" in z
             else DEFAULT_VISCOSITY,
+            # Archives predating solids_fraction default to pure liquid (1.0).
+            solids_fraction=f("cfg_material_solids_fraction")
+            if "cfg_material_solids_fraction" in z else 1.0,
         ),
         nozzle=NozzleConfig(
             position=tuple(z["cfg_position"].tolist()),

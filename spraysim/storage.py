@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .config import PhysicsConfig, MaterialConfig, NozzleConfig, SimConfig
+from .config import PhysicsConfig, MaterialConfig, NozzleConfig, PathConfig, SimConfig
 from .materials import DEFAULT_VISCOSITY
 from .drag import CONSTANT, DEFAULT_AIR_VISCOSITY
 from .simulator import SimResult
@@ -31,7 +31,8 @@ def _flatten_config(cfg: SimConfig) -> dict[str, np.ndarray]:
     phys, mat, noz = cfg.physics, cfg.material, cfg.nozzle
     n_dpl = np.nan if cfg.n_droplets is None else float(cfg.n_droplets)
     seed = np.nan if cfg.seed is None else float(cfg.seed)
-    return {
+    path = cfg.path
+    out = {
         # Physics
         "cfg_gravity": phys.gravity,
         "cfg_air_density": phys.air_density,
@@ -63,7 +64,19 @@ def _flatten_config(cfg: SimConfig) -> dict[str, np.ndarray]:
         "cfg_max_time": cfg.max_time,
         "cfg_n_trajectories": cfg.n_trajectories,
         "cfg_seed": seed,
+        # Path (G-code toolpath); cfg_has_path=0 => single fixed position.
+        "cfg_has_path": int(path is not None),
     }
+    if path is not None:
+        out.update({
+            "cfg_path_gcode": path.gcode,
+            "cfg_path_feed_override": np.nan if path.feed_override is None
+            else float(path.feed_override),
+            "cfg_path_default_feed": path.default_feed,
+            "cfg_path_standoff": path.standoff,
+            "cfg_path_carriage": int(path.include_carriage_velocity),
+        })
+    return out
 
 
 def _rebuild_config(z: np.lib.npyio.NpzFile) -> SimConfig:
@@ -114,6 +127,21 @@ def _rebuild_config(z: np.lib.npyio.NpzFile) -> SimConfig:
             mean_radius=f("cfg_mean_radius"),
             radius_std=f("cfg_radius_std"),
         ),
+        path=_rebuild_path(z),
+    )
+
+
+def _rebuild_path(z: np.lib.npyio.NpzFile) -> PathConfig | None:
+    """Reconstruct a PathConfig, or None for single-position / pre-path archives."""
+    if "cfg_has_path" not in z or not int(z["cfg_has_path"]):
+        return None
+    feed_override = z["cfg_path_feed_override"]
+    return PathConfig(
+        gcode=str(z["cfg_path_gcode"]),
+        feed_override=None if np.isnan(feed_override) else float(feed_override),
+        default_feed=float(z["cfg_path_default_feed"]),
+        standoff=float(z["cfg_path_standoff"]),
+        include_carriage_velocity=bool(int(z["cfg_path_carriage"])),
     )
 
 
@@ -156,6 +184,9 @@ def save_result(
         "exit_speed": result.exit_speed,
         "flow_rate": result.flow_rate,
         "droplets_capped": result.droplets_capped,
+        # Spray-on toolpath segments (k, 4); empty for single-position runs.
+        "path_segments": result.path_segments if result.path_segments is not None
+        else np.empty((0, 4), dtype=float),
     }
     data.update(_flatten_config(config))
 
@@ -191,6 +222,9 @@ def load_result(path: str | Path) -> tuple[SimResult, SimConfig]:
             exit_speed=float(z["exit_speed"]),
             flow_rate=float(z["flow_rate"]),
             droplets_capped=bool(z["droplets_capped"]),
+            path_segments=(z["path_segments"]
+                           if "path_segments" in z and z["path_segments"].size
+                           else None),
         )
         config = _rebuild_config(z)
     return result, config

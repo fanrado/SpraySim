@@ -394,3 +394,48 @@ def test_deposition_map_total_matches_real_run():
     landed = result.landed
     expected = np.sum((4.0 / 3.0) * np.pi * result.radii[landed] ** 3)
     assert field.total_wet_volume() == pytest.approx(expected, rel=1e-6)
+
+
+def _uniform_field(value, ny=10, nx=10, cell=1e-2):
+    t = np.full((ny, nx), float(value))
+    x_edges = np.arange(nx + 1) * cell
+    y_edges = np.arange(ny + 1) * cell
+    return analysis.DepositionField(x_edges, y_edges, t, cell, 1.0)
+
+
+def test_uniformity_of_uniform_field_is_perfect():
+    u = analysis.uniformity(_uniform_field(5e-6))
+    assert u.cv == pytest.approx(0.0, abs=1e-12)
+    assert u.christiansen_cu == pytest.approx(1.0, abs=1e-12)
+    assert u.coverage_fraction == pytest.approx(1.0)
+    assert u.mean_thickness == pytest.approx(5e-6)
+
+
+def test_uniformity_single_spot_is_nonuniform():
+    """A single-spot spray has strong radial fall-off: CV high, CU well below 1."""
+    cfg = SimConfig(n_droplets=3000, seed=7)
+    result = Simulator(cfg).run()
+    u = analysis.uniformity(analysis.deposition_map(result, cfg))
+    assert u.n_cells > 0
+    assert 0.0 <= u.coverage_fraction <= 1.0
+    assert u.cv > 0.1
+    assert u.christiansen_cu < 0.9
+
+
+def test_uniformity_rectangle_roi_penalizes_gaps():
+    """Over a target rectangle, an uncoated half drops coverage to ~0.5; the
+    default (wetted) ROI sees only the coated half and reads uniform."""
+    ny, nx, cell = 10, 10, 1e-2
+    t = np.zeros((ny, nx))
+    t[:, :5] = 1e-6  # coat the left half only
+    x_edges = np.arange(nx + 1) * cell
+    y_edges = np.arange(ny + 1) * cell
+    field = analysis.DepositionField(x_edges, y_edges, t, cell, 1.0)
+
+    full = analysis.uniformity(field, roi=(0.0, nx * cell, 0.0, ny * cell))
+    assert full.coverage_fraction == pytest.approx(0.5, abs=0.05)
+    assert full.christiansen_cu < 1.0
+
+    wetted = analysis.uniformity(field)  # default ROI = non-zero cells
+    assert wetted.christiansen_cu == pytest.approx(1.0, abs=1e-12)
+    assert wetted.coverage_fraction == pytest.approx(1.0)

@@ -5,6 +5,29 @@ self-describing `.npz` archive to `output/` (per-droplet arrays **plus** the
 config that produced them — see `spraysim/storage.py`), so these scripts can
 regenerate every plot and statistic without re-running the simulation.
 
+## Deposition & uniformity (library)
+
+`spraysim.analysis` turns a run into a **dry film-thickness map** and
+**coating-uniformity** metrics:
+
+```python
+from spraysim import storage, analysis
+result, config = storage.load_result("output/spray_data.npz")
+
+field = analysis.deposition_map(result, config)      # DepositionField (dry thickness, m)
+stats = analysis.uniformity(field)                   # over the wetted area, or roi=(x0,x1,y0,y1)
+print(stats.as_dict())
+```
+
+- `deposition_map(result, config, *, cell_size=None, extent=None)` bins landed
+  droplet volumes onto a grid; the dry thickness folds in
+  `material.solids_fraction`.
+- `uniformity(field, *, roi=None, coverage_threshold=None)` returns the CV,
+  Christiansen uniformity coefficient (CU), coverage fraction and thickness
+  percentiles. Default ROI is the wetted region; pass a rectangle to score a
+  target area (dry gaps penalised). A single-spot spray is highly non-uniform
+  (CV ≈ 1, CU ≈ 0.3) — path spraying (G-code) is how you build a uniform film.
+
 ## `report.py` — PDF report
 
 Builds a multi-page **PDF** from one or more `output/*.npz` archives.

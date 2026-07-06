@@ -1,5 +1,10 @@
 # SpraySim — Feature Plan: Deposition Analysis & G-code Path Spraying
 
+> **Status: ✅ all items complete.** A1–A3 (deposition/thickness map, uniformity
+> metrics, visualisation) and B1–B5 (G-code parser, path emitter, config/CLI,
+> simulator wiring & persistence, raster-uniformity validation) are implemented,
+> tested (pytest) and covered by `analysis/validate.py`.
+
 Two feature areas:
 
 - **A — Deposition analysis:** measure the **thickness** of the deposited film and

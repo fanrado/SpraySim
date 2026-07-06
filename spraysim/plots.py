@@ -92,6 +92,20 @@ def _plot_size_histogram(ax, result: SimResult):
     ax.legend(fontsize=8)
 
 
+def plot_deposition(field, ax=None):
+    """Draw a dry film-thickness heatmap (top view) from a ``DepositionField``."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(7, 6))
+    thickness_um = field.thickness * 1e6
+    im = ax.imshow(thickness_um, origin="lower", extent=field.extent,
+                   aspect="equal", cmap="inferno")
+    ax.set_title("Deposited film thickness (top view)")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.figure.colorbar(im, ax=ax, label="dry thickness (µm)", fraction=0.046, pad=0.04)
+    return ax.figure
+
+
 def save_figure(result: SimResult, config: SimConfig, path: str | Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -134,6 +134,97 @@ def deposition_map(
     return DepositionField(x_edges, y_edges, thickness, cell_size, sf)
 
 
+@dataclass
+class UniformityStats:
+    """How even a deposited film is over a region of interest (ROI)."""
+
+    n_cells: int
+    mean_thickness: float        # m, over the ROI
+    cv: float                    # coefficient of variation std/mean (0 = perfect)
+    christiansen_cu: float       # Christiansen uniformity coefficient (1 = perfect)
+    coverage_fraction: float     # fraction of ROI cells at/above the threshold
+    coverage_threshold: float    # m, the threshold actually used
+    min_thickness: float
+    max_thickness: float
+    p10_thickness: float
+    p90_thickness: float
+
+    def as_dict(self) -> dict:
+        return {
+            "n_cells": self.n_cells,
+            "mean_thickness_um": self.mean_thickness * 1e6,
+            "cv": self.cv,
+            "christiansen_cu": self.christiansen_cu,
+            "coverage_fraction": self.coverage_fraction,
+            "coverage_threshold_um": self.coverage_threshold * 1e6,
+            "min_thickness_um": self.min_thickness * 1e6,
+            "max_thickness_um": self.max_thickness * 1e6,
+            "p10_thickness_um": self.p10_thickness * 1e6,
+            "p90_thickness_um": self.p90_thickness * 1e6,
+        }
+
+
+def _roi_mask(field: DepositionField,
+              roi: tuple[float, float, float, float] | None) -> np.ndarray:
+    """Boolean (ny, nx) mask of cells to include in a uniformity calculation.
+
+    ``None`` -> the wetted (non-zero) cells; a rectangle ``(xmin, xmax, ymin,
+    ymax)`` -> all cells (incl. dry ones) whose centres fall inside it, so gaps
+    inside a target area are penalised.
+    """
+    if roi is None:
+        return field.nonzero_mask()
+    xmin, xmax, ymin, ymax = roi
+    xc = 0.5 * (field.x_edges[:-1] + field.x_edges[1:])
+    yc = 0.5 * (field.y_edges[:-1] + field.y_edges[1:])
+    in_x = (xc >= xmin) & (xc <= xmax)
+    in_y = (yc >= ymin) & (yc <= ymax)
+    return np.outer(in_y, in_x)
+
+
+def uniformity(
+    field: DepositionField,
+    *,
+    roi: tuple[float, float, float, float] | None = None,
+    coverage_threshold: float | None = None,
+) -> UniformityStats:
+    """Uniformity metrics of a deposited film over a region of interest.
+
+    ``roi`` defaults to the wetted (non-zero) cells; pass a rectangle
+    ``(xmin, xmax, ymin, ymax)`` to score a target area (dry gaps included).
+    ``coverage_threshold`` (m) defaults to half the ROI mean thickness.
+
+    Metrics: CV (std/mean, 0 = perfect), the Christiansen uniformity coefficient
+    ``CU = 1 - Σ|xᵢ-x̄| / (n·x̄)`` (1 = perfect), and the coverage fraction (cells
+    at or above the threshold), plus mean / min / max / p10 / p90.
+    """
+    values = field.thickness[_roi_mask(field, roi)]
+    n = int(values.size)
+    thr = 0.0 if coverage_threshold is None else float(coverage_threshold)
+
+    if n == 0 or values.sum() <= 0.0:
+        return UniformityStats(n, 0.0, 0.0, 0.0, 0.0, thr, 0.0, 0.0, 0.0, 0.0)
+
+    mean = float(values.mean())
+    cv = float(values.std()) / mean
+    cu = 1.0 - float(np.abs(values - mean).sum()) / (n * mean)
+    if coverage_threshold is None:
+        thr = 0.5 * mean
+    coverage = float(np.mean(values >= thr))
+    return UniformityStats(
+        n_cells=n,
+        mean_thickness=mean,
+        cv=cv,
+        christiansen_cu=cu,
+        coverage_fraction=coverage,
+        coverage_threshold=thr,
+        min_thickness=float(values.min()),
+        max_thickness=float(values.max()),
+        p10_thickness=float(np.percentile(values, 10)),
+        p90_thickness=float(np.percentile(values, 90)),
+    )
+
+
 def summarize(result: SimResult, config: SimConfig) -> SprayStats:
     landed = result.landed
     radial = radial_distances(result, config)

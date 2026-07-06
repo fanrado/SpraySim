@@ -24,6 +24,7 @@ from spraysim import (
     NozzleConfig,
     PhysicsConfig,
     MaterialConfig,
+    PathConfig,
     Simulator,
     analysis,
     plots,
@@ -63,6 +64,14 @@ def build_config(args: argparse.Namespace) -> SimConfig:
         mean_radius=args.mean_radius_mm * 1e-3,    # mm -> m
         radius_std=args.radius_std_mm * 1e-3,      # mm -> m
     )
+    path = None
+    if args.gcode:
+        path = PathConfig(
+            gcode=args.gcode,
+            feed_override=None if args.feed is None else args.feed / 1000.0 / 60.0,  # mm/min -> m/s
+            standoff=args.standoff_mm * 1e-3,
+            include_carriage_velocity=not args.no_carriage_velocity,
+        )
     return SimConfig(
         n_droplets=args.droplets,                  # None => derive from hydraulics
         spray_duration=args.spray_duration,
@@ -71,6 +80,7 @@ def build_config(args: argparse.Namespace) -> SimConfig:
         nozzle=nozzle,
         material=material,
         physics=PhysicsConfig(drag_model=args.drag_model),
+        path=path,
     )
 
 
@@ -103,6 +113,16 @@ def main() -> None:
     p.add_argument("--mean-radius-mm", type=float, default=0.4, help="mean droplet radius (mm)")
     p.add_argument("--radius-std-mm", type=float, default=0.12,
                    help="std of droplet radius (mm)")
+    # Path spraying (G-code toolpath).
+    p.add_argument("--gcode", default=None,
+                   help="G-code file: move the nozzle along the path (G1=spray, "
+                        "G0=travel) instead of a fixed spot")
+    p.add_argument("--feed", type=float, default=None,
+                   help="override feed rate (mm/min) for every move")
+    p.add_argument("--standoff-mm", type=float, default=150.0,
+                   help="nozzle height above the surface when the path has no Z (mm)")
+    p.add_argument("--no-carriage-velocity", action="store_true",
+                   help="do not add the nozzle travel velocity to launched droplets")
     # Physics.
     p.add_argument("--drag-model", default=DEFAULT_DRAG_MODEL, choices=list(DRAG_MODELS),
                    help="droplet drag model: clift_gauvin (Reynolds-dependent) or "
@@ -129,8 +149,10 @@ def main() -> None:
 
     print(f"Material: {config.material.name} ({config.material.density:g} kg/m^3, "
           f"{config.material.viscosity:g} Pa*s, solids {config.material.solids_fraction:g})")
+    source = (f"path {args.gcode}" if config.path is not None
+              else f"fixed spot, spraying for {args.spray_duration} s")
     print(f"Nozzle: {args.pressure_bar} bar, orifice {args.orifice_mm} mm, "
-          f"{args.shape}, spraying for {args.spray_duration} s")
+          f"{args.shape}; {source}")
     print(f"Droplet size: {args.distribution}, "
           f"mean {args.mean_radius_mm} mm +/- {args.radius_std_mm} mm")
     print(f"Drag model: {config.physics.drag_model}\n")

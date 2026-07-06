@@ -70,6 +70,9 @@ NO_PLOT="${NO_PLOT:-false}"
 DATA="${DATA:-output/spray_data.npz}"
 NO_DATA="${NO_DATA:-false}"
 DROPLETS="${DROPLETS:-}"
+GCODE="${GCODE:-}"
+FEED="${FEED:-}"
+STANDOFF_MM="${STANDOFF_MM:-150}"
 
 # Assemble the run.py invocation.
 CMD=("$PYTHON" run.py
@@ -104,6 +107,12 @@ fi
 # Only pin an explicit droplet count if the config set one.
 if [[ -n "$DROPLETS" ]]; then
     CMD+=(--droplets "$DROPLETS")
+fi
+
+# G-code path spraying (optional).
+if [[ -n "$GCODE" ]]; then
+    CMD+=(--gcode "$GCODE" --standoff-mm "$STANDOFF_MM")
+    [[ -n "$FEED" ]] && CMD+=(--feed "$FEED")
 fi
 
 if [[ "$NO_PLOT" == "true" ]]; then

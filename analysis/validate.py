@@ -23,7 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np  # noqa: E402
 
 from spraysim import (  # noqa: E402
-    SimConfig, NozzleConfig, PhysicsConfig, Simulator, drag, hydraulics,
+    SimConfig, NozzleConfig, PhysicsConfig, PathConfig, Simulator,
+    analysis, drag, hydraulics,
 )
 from spraysim.nozzle import Nozzle  # noqa: E402
 
@@ -166,6 +167,32 @@ def check_normal_moment():
     record("normal E[r^3] matches clipped sampler (any spread)", ok, ", ".join(parts))
 
 
+def _raster_gcode(size_mm=200, pitch_mm=10, standoff_mm=150, feed=3000):
+    lines = ["G21", "G90", f"G0 X0 Y0 Z{standoff_mm}", f"G1 F{feed}"]
+    rows = size_mm // pitch_mm + 1
+    for i in range(rows):
+        y = i * pitch_mm
+        x = size_mm if i % 2 == 0 else 0
+        lines.append(f"G1 X{x} Y{y}")
+        if i < rows - 1:
+            lines.append(f"G0 Y{y + pitch_mm}")
+    return "\n".join(lines) + "\n"
+
+
+def check_path_uniformity():
+    """A raster toolpath builds a far more uniform interior film than one spot."""
+    roi = (0.04, 0.16, 0.04, 0.16)
+    cfg = SimConfig(n_droplets=15000, seed=3, path=PathConfig(gcode=_raster_gcode()))
+    raster = analysis.uniformity(
+        analysis.deposition_map(Simulator(cfg).run(), cfg, cell_size=0.02), roi=roi)
+    spot = analysis.uniformity(
+        analysis.deposition_map(Simulator(SimConfig(n_droplets=15000, seed=3)).run(),
+                                SimConfig(), cell_size=0.02), roi=roi)
+    ok = raster.christiansen_cu > 0.7 and raster.christiansen_cu > spot.christiansen_cu
+    record("raster path builds a uniform film (CU) vs a single spot", ok,
+           f"raster CU={raster.christiansen_cu:.2f} vs spot CU={spot.christiansen_cu:.2f}")
+
+
 CHECKS = [
     check_vacuum_freefall,
     check_terminal_velocity_constant,
@@ -176,6 +203,7 @@ CHECKS = [
     check_hydraulics_identities,
     check_impact_speed_energy,
     check_normal_moment,
+    check_path_uniformity,
 ]
 
 

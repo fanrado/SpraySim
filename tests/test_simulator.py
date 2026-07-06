@@ -439,3 +439,13 @@ def test_uniformity_rectangle_roi_penalizes_gaps():
     wetted = analysis.uniformity(field)  # default ROI = non-zero cells
     assert wetted.christiansen_cu == pytest.approx(1.0, abs=1e-12)
     assert wetted.coverage_fraction == pytest.approx(1.0)
+
+
+def test_plot_deposition_smoke():
+    """plot_deposition renders a heatmap figure without error."""
+    import matplotlib.pyplot as plt
+    from spraysim import plots
+
+    fig = plots.plot_deposition(_uniform_field(3e-6))
+    assert fig is not None
+    plt.close(fig)

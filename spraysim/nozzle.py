@@ -30,6 +30,21 @@ def _orthonormal_basis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.nda
     return u, v, w
 
 
+def _allocate_counts(n: int, weights: np.ndarray) -> np.ndarray:
+    """Split ``n`` items across bins by ``weights``, summing exactly to ``n``.
+
+    Largest-remainder rounding: floor each share, then hand the leftover items to
+    the bins with the biggest fractional parts.
+    """
+    exact = n * weights
+    base = np.floor(exact).astype(int)
+    remainder = int(n - base.sum())
+    if remainder > 0:
+        order = np.argsort(exact - base)[::-1][:remainder]
+        base[order] += 1
+    return base
+
+
 def _lognormal_params(mean: float, std: float) -> tuple[float, float]:
     """Underlying-normal (mu, sigma) of a log-normal with the given linear mean/std."""
     sigma2 = math.log(1.0 + (std / mean) ** 2)
@@ -120,16 +135,15 @@ class Nozzle:
 
     # -- emission ------------------------------------------------------------
 
-    def emit(self, n: int, rng: np.random.Generator):
-        """Sample ``n`` droplets.
+    def _emit_core(self, positions: np.ndarray, rng: np.random.Generator,
+                   carriage_velocity: np.ndarray | None = None):
+        """Sample droplet velocities/radii for the given launch ``positions``.
 
-        Returns
-        -------
-        positions : (n, 3) array of launch positions (m)
-        velocities : (n, 3) array of launch velocities (m/s)
-        radii : (n,) array of droplet radii (m)
+        ``carriage_velocity`` ((3,) or (n, 3), m/s) is added to each droplet's
+        launch velocity — a moving nozzle throws droplets along its travel.
         """
         cfg = self.config
+        n = positions.shape[0]
 
         # Directions: uniform over the cone's solid angle.
         # cos(theta) uniform in [cos(half_angle), 1] gives an even areal spread.
@@ -149,7 +163,56 @@ class Nozzle:
         speeds = rng.normal(self.exit_speed, self.exit_speed * cfg.speed_spread, size=n)
         speeds = np.clip(speeds, 0.0, None)
         velocities = dirs * speeds[:, None]
+        if carriage_velocity is not None:
+            velocities = velocities + carriage_velocity
 
         radii = self.sample_radii(n, rng)
-        positions = np.tile(np.asarray(cfg.position, float), (n, 1))
         return positions, velocities, radii
+
+    def emit(self, n: int, rng: np.random.Generator):
+        """Sample ``n`` droplets from the nozzle's fixed position.
+
+        Returns ``(positions (n,3), velocities (n,3), radii (n,))``.
+        """
+        positions = np.tile(np.asarray(self.config.position, float), (n, 1))
+        return self._emit_core(positions, rng)
+
+    def emit_from(self, position, n: int, rng: np.random.Generator, *,
+                  carriage_velocity=None):
+        """Sample ``n`` droplets from an arbitrary ``position`` (m), optionally
+        adding a nozzle ``carriage_velocity`` (m/s)."""
+        positions = np.tile(np.asarray(position, float), (n, 1))
+        cv = None if carriage_velocity is None else np.asarray(carriage_velocity, float)
+        return self._emit_core(positions, rng, cv)
+
+    def emit_path(self, moves, n: int, rng: np.random.Generator, *,
+                  include_carriage_velocity: bool = True):
+        """Sample ``n`` droplets spread along the spray-on (G1) segments of a path.
+
+        Droplets are allocated to segments in proportion to their spray time
+        (uniform deposition rate) and placed at uniformly random points along each
+        segment. If ``include_carriage_velocity`` the segment's travel velocity is
+        added to each droplet's launch velocity.
+        """
+        spray = [m for m in moves if m.spray_on and m.duration > 0.0 and m.length > 0.0]
+        if n <= 0 or not spray:
+            empty = np.zeros((0, 3))
+            return empty, empty, np.zeros(0)
+
+        durations = np.array([m.duration for m in spray])
+        counts = _allocate_counts(n, durations / durations.sum())
+
+        positions, carriage = [], []
+        for move, count in zip(spray, counts):
+            if count == 0:
+                continue
+            start = np.asarray(move.start, float)
+            end = np.asarray(move.end, float)
+            t = rng.uniform(0.0, 1.0, size=count)[:, None]
+            positions.append(start + t * (end - start))
+            seg_v = (end - start) / move.duration if include_carriage_velocity else np.zeros(3)
+            carriage.append(np.tile(seg_v, (count, 1)))
+
+        positions = np.vstack(positions)
+        cv = np.vstack(carriage) if include_carriage_velocity else None
+        return self._emit_core(positions, rng, cv)

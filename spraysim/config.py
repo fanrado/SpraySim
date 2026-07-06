@@ -11,6 +11,7 @@ import math
 from .hydraulics import DEFAULT_SHAPE
 from .materials import DEFAULT_MATERIAL, DEFAULT_VISCOSITY, material_density
 from .drag import DEFAULT_DRAG_MODEL, DEFAULT_AIR_VISCOSITY
+from .gcode import DEFAULT_FEED, DEFAULT_STANDOFF
 
 
 @dataclass
@@ -76,6 +77,23 @@ class NozzleConfig:
 
 
 @dataclass
+class PathConfig:
+    """Move the nozzle along a G-code toolpath instead of a fixed spot.
+
+    ``gcode`` is a file path (or inline text containing newlines). Spraying is on
+    during G1 moves and off during G0 travel. When set on a ``SimConfig``, the
+    droplet count is derived from the total spray time along the path rather than
+    from ``spray_duration``.
+    """
+
+    gcode: str = ""                              # .gcode file path or inline text
+    feed_override: float | None = None           # m/s; None => program F / default
+    default_feed: float = DEFAULT_FEED           # m/s when the program sets no F
+    standoff: float = DEFAULT_STANDOFF           # m, nozzle height if path has no Z
+    include_carriage_velocity: bool = True       # add nozzle travel velocity to drops
+
+
+@dataclass
 class SimConfig:
     """Top-level run configuration."""
 
@@ -93,3 +111,5 @@ class SimConfig:
     physics: PhysicsConfig = field(default_factory=PhysicsConfig)
     material: MaterialConfig = field(default_factory=MaterialConfig)
     nozzle: NozzleConfig = field(default_factory=NozzleConfig)
+    # When set, the nozzle follows this G-code path instead of a fixed position.
+    path: PathConfig | None = None

@@ -149,6 +149,10 @@ def main() -> None:
     print("\n=== Spray statistics ===")
     print(json.dumps(stats.as_dict(), indent=2))
 
+    print("\n=== Deposition & uniformity ===")
+    field = analysis.deposition_map(result, config)
+    print(json.dumps(analysis.uniformity(field).as_dict(), indent=2))
+
     if result.droplets_capped:
         print(f"\nNote: droplet count was capped at {config.max_droplets}. "
               "Lower --spray-duration or raise the cap for a full run.")

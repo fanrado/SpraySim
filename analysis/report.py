@@ -89,9 +89,10 @@ def cover_page(pdf: PdfPages, runs) -> None:
 def comparison_page(pdf: PdfPages, runs) -> None:
     """A table comparing key metrics across runs (only when >1 run)."""
     cols = ["material", "droplets", "exit v\n(m/s)", "flow\n(mL/s)",
-            "mean t\n(s)", "p50 r\n(m)", "p90 r\n(m)", "mean rad\n(mm)"]
+            "mean t\n(s)", "p90 r\n(m)", "mean rad\n(mm)", "CU"]
     rows, cells = [], []
     for name, result, config, stats in runs:
+        cu = analysis.uniformity(analysis.deposition_map(result, config)).christiansen_cu
         rows.append(name)
         cells.append([
             config.material.name,
@@ -99,9 +100,9 @@ def comparison_page(pdf: PdfPages, runs) -> None:
             f"{result.exit_speed:.2f}",
             f"{result.flow_rate * 1e6:.2f}",
             f"{stats.mean_flight_time:.3f}",
-            f"{stats.coverage_radius_p50:.3f}",
             f"{stats.coverage_radius_p90:.3f}",
             f"{stats.mean_radius_mm:.3f}",
+            f"{cu:.2f}",
         ])
 
     fig, ax = plt.subplots(figsize=(11.69, 8.27))  # A4 landscape
@@ -194,12 +195,38 @@ def _fmt(v):
     return str(v)
 
 
+def _deposition_page(pdf: PdfPages, name, result, config) -> None:
+    """Dry film-thickness heatmap + per-cell thickness histogram with CU/CV."""
+    field = analysis.deposition_map(result, config)
+    u = analysis.uniformity(field)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig.suptitle(f"{name} — deposition & uniformity", fontsize=14, fontweight="bold")
+    plots.plot_deposition(field, ax=ax1)
+
+    vals = field.thickness[field.nonzero_mask()] * 1e6
+    if vals.size:
+        ax2.hist(vals, bins=40, color="steelblue", alpha=0.85, edgecolor="white", lw=0.3)
+        ax2.axvline(u.mean_thickness * 1e6, color="crimson", ls="--", lw=1.5,
+                    label=f"mean = {u.mean_thickness * 1e6:.3f} µm")
+        ax2.legend(fontsize=8)
+    ax2.set_title(f"Cell thickness — CU={u.christiansen_cu:.2f}, "
+                  f"CV={u.cv:.2f}, coverage={u.coverage_fraction:.0%}")
+    ax2.set_xlabel("dry thickness (µm)")
+    ax2.set_ylabel("cell count")
+
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def run_pages(pdf: PdfPages, name, result, config, stats) -> None:
     fig = plots.make_figure(result, config)
     fig.suptitle(f"SpraySim — {name}", fontsize=15, fontweight="bold")
     pdf.savefig(fig)
     plt.close(fig)
     _extra_analysis_page(pdf, name, result, config)
+    _deposition_page(pdf, name, result, config)
     _config_stats_page(pdf, name, result, config, stats)
 
 

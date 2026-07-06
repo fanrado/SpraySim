@@ -11,15 +11,30 @@ from spraysim import (
     NozzleConfig,
     PhysicsConfig,
     MaterialConfig,
+    PathConfig,
     Simulator,
     analysis,
     hydraulics,
     materials,
     drag,
+    gcode,
     storage,
 )
 from spraysim.nozzle import Nozzle
 from spraysim.simulator import SimResult
+
+
+def _raster(size_mm=200, pitch_mm=10, standoff_mm=150, feed=3000):
+    """Inline serpentine raster G-code (G1 spray passes, G0 travel between rows)."""
+    lines = ["G21", "G90", f"G0 X0 Y0 Z{standoff_mm}", f"G1 F{feed}"]
+    rows = size_mm // pitch_mm + 1
+    for i in range(rows):
+        y = i * pitch_mm
+        x = size_mm if i % 2 == 0 else 0
+        lines.append(f"G1 X{x} Y{y}")
+        if i < rows - 1:
+            lines.append(f"G0 Y{y + pitch_mm}")
+    return "\n".join(lines) + "\n"
 
 WATER = 1000.0
 
@@ -449,3 +464,77 @@ def test_plot_deposition_smoke():
     fig = plots.plot_deposition(_uniform_field(3e-6))
     assert fig is not None
     plt.close(fig)
+
+
+# --- G-code path spraying (Feature B) -------------------------------------- #
+
+def test_gcode_parser_segments_units_and_helpers():
+    """G1 sprays, G0 travels; mm->m, feed mm/min->m/s, spray time and bounds."""
+    moves = gcode.parse_gcode(
+        "; raster\nG21 G90\nG0 X0 Y0 Z150\nG1 F6000\nG1 X100 Y0\nG0 Y20\nG1 X0 Y20\n",
+        standoff=0.15)
+    spray = [m for m in moves if m.spray_on]
+    travel = [m for m in moves if not m.spray_on]
+    assert len(spray) == 2 and len(travel) >= 1
+    assert spray[0].feed == pytest.approx(0.1)        # 6000 mm/min = 0.1 m/s
+    assert spray[0].length == pytest.approx(0.1)      # 100 mm
+    assert gcode.total_spray_time(moves) == pytest.approx(2.0)  # two 100 mm passes @0.1 m/s
+    assert gcode.bounds(moves) == pytest.approx((0.0, 0.1, 0.0, 0.02))
+
+
+def test_gcode_units_relative_and_arc_rejection():
+    inch = gcode.parse_gcode("G20 G90\nG1 F60 X1 Y0 Z6", standoff=0.1)
+    assert inch[0].end[0] == pytest.approx(0.0254)    # 1 inch
+    rel = gcode.parse_gcode("G21 G91\nG1 F600 X10\nG1 X10", standoff=0.1)
+    assert rel[1].end[0] == pytest.approx(0.02)       # 10 mm + 10 mm
+    with pytest.raises(ValueError, match="Arc"):
+        gcode.parse_gcode("G1 X0 Y0\nG2 X1 Y1 I0.5 J0")
+
+
+def test_emit_path_places_droplets_along_segments_with_carriage():
+    """emit_path spreads droplets along the spray segment; carriage velocity adds
+    the nozzle travel to their launch velocity (visible at high feed)."""
+    moves = gcode.parse_gcode("G21 G90\nG1 X200 Y0 Z150\n", standoff=0.15,
+                              feed_override=5.0)  # 5 m/s carriage along +x
+    nz = Nozzle(NozzleConfig(), WATER)
+    pos, vel, _ = nz.emit_path(moves, 3000, np.random.default_rng(0))
+    assert pos.shape[0] == 3000
+    assert 0.0 <= pos[:, 0].min() and pos[:, 0].max() <= 0.2   # along the segment
+    assert np.allclose(pos[:, 1], 0.0)
+    _, vel_no, _ = nz.emit_path(moves, 3000, np.random.default_rng(0),
+                                include_carriage_velocity=False)
+    assert vel[:, 0].mean() > vel_no[:, 0].mean() + 1.0        # +x carriage speed
+
+
+def test_path_run_fills_area_and_beats_single_spot(tmp_path):
+    """A raster path builds a uniform interior film (high CU), unlike a single
+    spot; the toolpath is recorded and round-trips through the .npz."""
+    cfg = SimConfig(n_droplets=15000, seed=3, path=PathConfig(gcode=_raster()))
+    result = Simulator(cfg).run()
+    assert result.path_segments is not None and result.path_segments.shape[1] == 4
+
+    roi = (0.04, 0.16, 0.04, 0.16)
+    field = analysis.deposition_map(result, cfg, cell_size=0.02)
+    interior = analysis.uniformity(field, roi=roi)
+
+    spot = Simulator(SimConfig(n_droplets=15000, seed=3)).run()
+    spot_u = analysis.uniformity(
+        analysis.deposition_map(spot, SimConfig(), cell_size=0.02), roi=roi)
+
+    assert interior.christiansen_cu > spot_u.christiansen_cu
+    assert interior.christiansen_cu > 0.7
+    assert interior.coverage_fraction > 0.95
+
+    # Path config and segments survive a save/load round-trip.
+    path = storage.save_result(result, cfg, tmp_path / "raster.npz")
+    loaded, loaded_cfg = storage.load_result(path)
+    assert loaded_cfg.path is not None
+    assert loaded_cfg.path.include_carriage_velocity is True
+    assert loaded.path_segments.shape == result.path_segments.shape
+
+
+def test_path_without_spray_moves_raises():
+    """A path of only G0 travel has nothing to spray."""
+    cfg = SimConfig(seed=0, path=PathConfig(gcode="G21 G90\nG0 X100 Y100 Z150\n"))
+    with pytest.raises(ValueError, match="no spray"):
+        Simulator(cfg).run()

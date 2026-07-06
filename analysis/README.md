@@ -50,13 +50,16 @@ python analysis/report.py --glob "output/*.npz" --out output/spray_report.pdf
 
 - **Cover page** — when it was generated and the runs included.
 - **Comparison table** *(only with >1 run)* — droplet count, exit speed, flow
-  rate, mean flight time, p50/p90 coverage radius and mean radius side by side.
-- **Per run** (three pages each):
+  rate, mean flight time, p90 coverage radius, mean radius and the Christiansen
+  uniformity coefficient (CU) side by side.
+- **Per run** (four pages each):
   1. the standard 2×2 summary figure (trajectories, landing pattern, radial
      profile, size histogram);
   2. an **extra-analysis** page — radial coverage CDF and a droplet-size-vs-range
      scatter (does size sorting push bigger drops further?);
-  3. a **configuration & statistics** page listing the exact material, nozzle,
+  3. a **deposition & uniformity** page — dry film-thickness heatmap plus a
+     per-cell thickness histogram annotated with CU / CV / coverage;
+  4. a **configuration & statistics** page listing the exact material, nozzle,
      hydraulics and derived stats behind the run.
 
 Archives that can't be read (e.g. an older, incompatible format, or a foreign

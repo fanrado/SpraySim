@@ -60,7 +60,8 @@ python run.py --help                             # all flags
 
 ### Outputs
 
-Each run prints a JSON block of statistics and writes:
+Each run prints a JSON block of statistics — including **deposition & uniformity**
+(dry film thickness, CV, Christiansen CU, coverage) — and writes:
 
 - a **2×2 summary figure** (`--out`, skip with `--no-plot`);
 - a compressed **`.npz` archive** (`--data`, skip with `--no-data`) holding the

@@ -8,7 +8,7 @@ import numpy as np
 
 from .config import SimConfig
 from .nozzle import Nozzle
-from . import hydraulics, drag
+from . import hydraulics, drag, gcode
 
 
 @dataclass
@@ -26,6 +26,9 @@ class SimResult:
     exit_speed: float = 0.0         # m/s, pressure-derived launch speed
     flow_rate: float = 0.0          # m^3/s, volumetric flow through the orifice
     droplets_capped: bool = False   # True if the derived count hit max_droplets
+    # Spray-on (G1) segments of the toolpath, (k, 4) [x0, y0, x1, y1]; None if
+    # the run sprayed from a single fixed position.
+    path_segments: np.ndarray | None = None
 
     @property
     def n(self) -> int:
@@ -45,18 +48,43 @@ class Simulator:
 
         nozzle = Nozzle(cfg.nozzle, cfg.material.density)
 
-        # Droplet count: explicit override, or derived from the hydraulics.
+        # Droplet count: explicit override, or derived from flow * spray time.
+        # For a G-code path the "spray time" is the total time on G1 moves.
         droplets_capped = False
+        path_segments = None
+        if cfg.path is not None:
+            moves = gcode.load_moves(
+                cfg.path.gcode, default_feed=cfg.path.default_feed,
+                standoff=cfg.path.standoff, feed_override=cfg.path.feed_override,
+            )
+            spray_time = gcode.total_spray_time(moves)
+            path_segments = np.array(
+                [[m.start[0], m.start[1], m.end[0], m.end[1]]
+                 for m in moves if m.spray_on], dtype=float
+            )
+        else:
+            moves = None
+            spray_time = cfg.spray_duration
+
         if cfg.n_droplets is not None:
             n = int(cfg.n_droplets)
         else:
             raw_n = hydraulics.droplet_count(
-                nozzle.flow_rate, cfg.spray_duration, nozzle.mean_droplet_volume()
+                nozzle.flow_rate, spray_time, nozzle.mean_droplet_volume()
             )
             n = min(raw_n, cfg.max_droplets)
             droplets_capped = raw_n > cfg.max_droplets
 
-        pos, vel, radii = nozzle.emit(n, rng)
+        if moves is not None:
+            pos, vel, radii = nozzle.emit_path(
+                moves, n, rng,
+                include_carriage_velocity=cfg.path.include_carriage_velocity,
+            )
+            n = pos.shape[0]
+            if n == 0:
+                raise ValueError("G-code path has no spray (G1) moves to emit from.")
+        else:
+            pos, vel, radii = nozzle.emit(n, rng)
         launch_speeds = np.linalg.norm(vel, axis=1)
 
         # Per-droplet drag factor k so that a_drag = -k * |v| * v, derived from
@@ -167,4 +195,5 @@ class Simulator:
             exit_speed=nozzle.exit_speed,
             flow_rate=nozzle.flow_rate,
             droplets_capped=droplets_capped,
+            path_segments=path_segments,
         )

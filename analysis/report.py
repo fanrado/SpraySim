@@ -92,7 +92,7 @@ def comparison_page(pdf: PdfPages, runs) -> None:
             "mean t\n(s)", "p90 r\n(m)", "mean rad\n(mm)", "CU"]
     rows, cells = [], []
     for name, result, config, stats in runs:
-        cu = analysis.uniformity(analysis.deposition_map(result, config)).christiansen_cu
+        cu = _reported_uniformity(analysis.deposition_map(result, config), result)[0].christiansen_cu
         rows.append(name)
         cells.append([
             config.material.name,
@@ -195,14 +195,33 @@ def _fmt(v):
     return str(v)
 
 
+def _reported_uniformity(field, result):
+    """Uniformity over the coated target: the toolpath extent for a path run,
+    else the wetted region. Returns (UniformityStats, roi_label)."""
+    seg = result.path_segments
+    if seg is not None and len(seg):
+        xs = np.concatenate([seg[:, 0], seg[:, 2]])
+        ys = np.concatenate([seg[:, 1], seg[:, 3]])
+        roi = (float(xs.min()), float(xs.max()), float(ys.min()), float(ys.max()))
+        return analysis.uniformity(field, roi=roi), "path area"
+    return analysis.uniformity(field), "wetted"
+
+
 def _deposition_page(pdf: PdfPages, name, result, config) -> None:
     """Dry film-thickness heatmap + per-cell thickness histogram with CU/CV."""
     field = analysis.deposition_map(result, config)
-    u = analysis.uniformity(field)
+    u, roi_label = _reported_uniformity(field, result)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
     fig.suptitle(f"{name} — deposition & uniformity", fontsize=14, fontweight="bold")
     plots.plot_deposition(field, ax=ax1)
+
+    # Overlay the spray-on toolpath, if this was a path run.
+    if result.path_segments is not None:
+        for i, seg in enumerate(result.path_segments):
+            ax1.plot([seg[0], seg[2]], [seg[1], seg[3]], color="cyan", lw=0.6,
+                     alpha=0.7, label="toolpath" if i == 0 else None)
+        ax1.legend(loc="upper right", fontsize=7)
 
     vals = field.thickness[field.nonzero_mask()] * 1e6
     if vals.size:
@@ -210,7 +229,7 @@ def _deposition_page(pdf: PdfPages, name, result, config) -> None:
         ax2.axvline(u.mean_thickness * 1e6, color="crimson", ls="--", lw=1.5,
                     label=f"mean = {u.mean_thickness * 1e6:.3f} µm")
         ax2.legend(fontsize=8)
-    ax2.set_title(f"Cell thickness — CU={u.christiansen_cu:.2f}, "
+    ax2.set_title(f"Cell thickness ({roi_label}) — CU={u.christiansen_cu:.2f}, "
                   f"CV={u.cv:.2f}, coverage={u.coverage_fraction:.0%}")
     ax2.set_xlabel("dry thickness (µm)")
     ax2.set_ylabel("cell count")

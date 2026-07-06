@@ -30,6 +30,12 @@ Integration uses **semi-implicit (symplectic) Euler** with a fixed timestep, and
 the ground impact is found by linearly interpolating the crossing point within
 the final step.
 
+Droplets do not interact, so a **moving nozzle** (a G-code toolpath) is just a
+batch of droplets emitted from many positions along the path — the same
+integrator handles it in one pass. A droplet also inherits the nozzle's
+**carriage velocity**, so a fast-moving nozzle throws its droplets slightly
+downstream (see [sprayer_parameters.md](sprayer_parameters.md)).
+
 ## Drag coefficient (Reynolds-dependent)
 
 The drag coefficient `C_d` is not constant — it depends on the droplet

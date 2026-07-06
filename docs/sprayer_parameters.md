@@ -118,6 +118,29 @@ to be non-negative.
 
 ---
 
+## 4b. Path spraying (G-code)
+
+By default the nozzle sprays from a single fixed spot. Set a **G-code toolpath**
+and it instead travels the path, depositing a 2-D pattern (line, raster, arbitrary
+toolpath). `G1` moves spray; `G0` moves are travel (spray off). Coordinates are in
+**mm**; the droplet count comes from the total spray time along the path (not
+`SPRAY_DURATION`). See the `raster` preset and `examples/raster.gcode`.
+
+| Parameter | Config key | CLI flag | Field | Unit | Default | Meaning |
+|-----------|-----------|----------|-------|------|---------|---------|
+| G-code path | `GCODE` | `--gcode` | `PathConfig.gcode` | file | *(none → fixed spot)* | Toolpath file (or inline text). |
+| Feed override | `FEED` | `--feed` | `PathConfig.feed_override` | mm/min | *(empty → program `F`)* | Force the feed on every move. |
+| Standoff | `STANDOFF_MM` | `--standoff-mm` | `PathConfig.standoff` | mm | `150` | Nozzle height when the path has no Z. |
+| Carriage velocity | — | `--no-carriage-velocity` | `PathConfig.include_carriage_velocity` | flag | on | Add the nozzle travel velocity to launched droplets. |
+
+Supported G-code subset: `G0`/`G1`, `X Y Z`, `F`, `G90`/`G91` (abs/rel),
+`G20`/`G21` (inch/mm), `;` and `( )` comments. Arc moves `G2`/`G3` are rejected —
+linearise them first. A **moving nozzle throws droplets along its travel**
+(matters mainly at high feed / low droplet speed); disable with
+`--no-carriage-velocity`.
+
+---
+
 ## 5. Simulation / integration controls
 
 These do not change the physics; they control accuracy, runtime, and

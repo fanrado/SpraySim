@@ -46,7 +46,13 @@ Inputs live in `config/*.conf` — plain shell `KEY=value` files; copy one to ma
 new preset. Every key is documented in
 [sprayer_parameters.md](docs/sprayer_parameters.md) and
 [material_properties.md](docs/material_properties.md). Shipped presets: `default`
-(water), `fine_mist` (ethanol, small droplets) and `big_drops` (large droplets).
+(water), `fine_mist` (ethanol, small droplets), `big_drops` (large droplets), and
+`raster` (moves the nozzle along a **G-code toolpath** to build a uniform
+coating).
+
+Set `GCODE=` (or `--gcode file.gcode`) to spray while moving along a path
+(`G1` = spray, `G0` = travel) instead of a fixed spot; the deposited film and its
+uniformity (CV / Christiansen CU / coverage) are reported per run.
 
 `main.sh` just translates a config into a `run.py` invocation, so you can also run
 the CLI directly:
@@ -92,10 +98,11 @@ print(analysis.summarize(result, config).as_dict())
 
 ```
 docs/            # physics.md + input reference docs
-analysis/        # offline analysis of saved runs -> PDF report
+analysis/        # offline analysis of saved runs -> PDF report + validation
 config/          # *.conf presets (KEY=value) — the inputs you edit
+examples/        # example G-code toolpaths (e.g. raster.gcode)
 main.sh          # launcher: loads a config and runs the simulation
-spraysim/        # the package (config, hydraulics, drag, nozzle, simulator, ...)
+spraysim/        # the package (config, hydraulics, drag, gcode, nozzle, simulator, ...)
 run.py           # Python CLI entry point (called by main.sh)
 tests/           # pytest sanity + physics-validation checks
 ```

@@ -16,6 +16,41 @@ Supported subset
 Everything is converted to **SI** internally: positions in metres, feed in m/s.
 Arc moves ``G2``/``G3`` are **rejected** (linearise the path first); other
 unrecognised codes (``M``/``T``/``S``/``E`` ...) are ignored.
+
+Feed rate
+---------
+``F`` is **modal**: once set it applies to every move that follows until a new
+``F`` appears, so a single ``F`` before a raster's passes (see
+``examples/raster.gcode``) covers the whole file. It is given in program
+units/min (mm/min by default, in/min under ``G20``) and converted to m/s. If a
+program never sets an ``F``, moves use ``default_feed``; passing
+``feed_override`` instead forces that one feed on every move and ignores all
+``F`` words in the file (useful for probing a specific carriage speed).
+
+Feed is what turns a move's length into a **duration**
+(:attr:`Move.duration` = ``length / feed``) — the time the nozzle dwells over
+that segment. Everything downstream keys off that duration, not the raw feed
+value: :func:`total_spray_time` sums it to get the path's total spray time
+(which sets the overall droplet count), and ``Nozzle.emit_path`` (in
+:mod:`spraysim.nozzle`) allocates droplets to each segment in proportion to
+its share of that duration, and derives the segment's carriage velocity from
+it. A faster feed over the same length means a shorter duration, so — at a
+fixed flow rate — fewer droplets (and a lighter deposit) along that segment.
+
+Usage
+-----
+As a library, call :func:`load_moves` / :func:`parse_gcode` to get a list of
+:class:`Move` (this is what ``SimConfig.path`` does internally when you pass
+``--gcode`` to ``run.py``). Run this file directly to parse a ``.gcode`` file
+and print a summary — moves, spray/travel counts, spray length & time, and
+bounds — handy for sanity-checking a toolpath before simulating it:
+
+    python gcode.py path/to/file.gcode
+    python gcode.py examples/raster.gcode --feed 5000        # override F (mm/min)
+    python gcode.py examples/raster.gcode --standoff-mm 100  # height if no Z
+
+(run from the ``spraysim/`` directory; from the repo root use
+``python spraysim/gcode.py ...``).
 """
 
 from __future__ import annotations
@@ -107,6 +142,8 @@ def parse_gcode(
                 # other G codes (G17, G54, ...) are ignored
             elif L == "F":
                 if feed_override is None:
+                    # Modal: this feed sticks for every following move until
+                    # the next F word (or the end of the file).
                     feed = num * unit / 60.0   # units/min -> m/s
             elif L in ("X", "Y", "Z"):
                 target[L] = num * unit
@@ -153,3 +190,38 @@ def bounds(moves: list[Move]) -> tuple[float, float, float, float]:
     if not xs:
         return (0.0, 0.0, 0.0, 0.0)
     return (min(xs), max(xs), min(ys), max(ys))
+
+
+def main() -> None:
+    """CLI: parse a G-code file and print a summary. See the module docstring."""
+    import argparse
+
+    p = argparse.ArgumentParser(
+        description="Parse a G-code toolpath and print a spray/travel summary."
+    )
+    p.add_argument("gcode", help="G-code file (or inline text containing a newline)")
+    p.add_argument("--feed", type=float, default=None,
+                   help="override the feed rate (mm/min) for every move, "
+                        "ignoring the file's F words")
+    p.add_argument("--standoff-mm", type=float, default=DEFAULT_STANDOFF * 1e3,
+                   help="nozzle height (mm) used while the path has no Z "
+                        f"(default: {DEFAULT_STANDOFF * 1e3:g})")
+    args = p.parse_args()
+
+    feed_override = None if args.feed is None else args.feed * 1.0e-3 / 60.0
+    moves = load_moves(
+        args.gcode, standoff=args.standoff_mm * 1.0e-3, feed_override=feed_override
+    )
+    spray = [m for m in moves if m.spray_on]
+    travel = [m for m in moves if not m.spray_on]
+    xmin, xmax, ymin, ymax = bounds(moves)
+
+    print(f"{len(moves)} moves: {len(spray)} spray (G1), {len(travel)} travel (G0)")
+    print(f"spray length : {spray_length(moves) * 1.0e3:.1f} mm")
+    print(f"spray time   : {total_spray_time(moves):.3f} s")
+    print(f"bounds (mm)  : x [{xmin * 1.0e3:.1f}, {xmax * 1.0e3:.1f}], "
+          f"y [{ymin * 1.0e3:.1f}, {ymax * 1.0e3:.1f}]")
+
+
+if __name__ == "__main__":
+    main()

@@ -3,7 +3,11 @@
 > **Status: ✅ all items complete.** A1–A3 (deposition/thickness map, uniformity
 > metrics, visualisation) and B1–B5 (G-code parser, path emitter, config/CLI,
 > simulator wiring & persistence, raster-uniformity validation) are implemented,
-> tested (pytest) and covered by `analysis/validate.py`.
+> tested (pytest) and covered by `analysis/validate.py`. Uniformity (CV/CU/
+> coverage) is stored in every `.npz` (`spraysim.storage.load_uniformity`), and
+> `analysis/validate.py` / the test suite also cover the dense-vs-sparse raster
+> comparison (periodic banding lowers CU) alongside the raster-vs-single-spot
+> check.
 
 Two feature areas:
 

@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 CONFIG_DIR="config"
-PYTHON="${PYTHON:-python3}"
+PYTHON="${PYTHON:-python}"
 
 if [[ "${1:-}" == "--list" || "${1:-}" == "-l" ]]; then
     echo "Available configs in ${CONFIG_DIR}/:"

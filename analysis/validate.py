@@ -193,6 +193,32 @@ def check_path_uniformity():
            f"raster CU={raster.christiansen_cu:.2f} vs spot CU={spot.christiansen_cu:.2f}")
 
 
+def check_raster_pitch_uniformity():
+    """A dense raster (rows overlapping within the spray footprint, ~140 mm wide
+    at the default 150 mm standoff / 25 deg cone) yields a near-uniform interior
+    film; a sparse raster (row pitch well beyond that footprint) leaves dry
+    stripes between passes, so its uniformity is markedly worse — the CU/CV
+    metrics detect the periodic banding."""
+    roi = (0.1, 0.3, 0.1, 0.3)
+    dense = analysis.uniformity(
+        analysis.deposition_map(
+            Simulator(SimConfig(n_droplets=150_000, seed=3,
+                                path=PathConfig(gcode=_raster_gcode(size_mm=400, pitch_mm=10)))
+                     ).run(),
+            SimConfig(), cell_size=0.01),
+        roi=roi)
+    sparse = analysis.uniformity(
+        analysis.deposition_map(
+            Simulator(SimConfig(n_droplets=150_000, seed=3,
+                                path=PathConfig(gcode=_raster_gcode(size_mm=400, pitch_mm=200)))
+                     ).run(),
+            SimConfig(), cell_size=0.01),
+        roi=roi)
+    ok = dense.christiansen_cu > 0.7 and dense.christiansen_cu > sparse.christiansen_cu + 0.3
+    record("dense raster (CU) beats a sparse, banded raster", ok,
+           f"dense CU={dense.christiansen_cu:.2f} vs sparse CU={sparse.christiansen_cu:.2f}")
+
+
 CHECKS = [
     check_vacuum_freefall,
     check_terminal_velocity_constant,
@@ -204,6 +230,7 @@ CHECKS = [
     check_impact_speed_energy,
     check_normal_moment,
     check_path_uniformity,
+    check_raster_pitch_uniformity,
 ]
 
 

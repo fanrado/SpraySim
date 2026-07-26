@@ -559,6 +559,23 @@ def test_path_run_fills_area_and_beats_single_spot(tmp_path):
     assert loaded.path_segments.shape == result.path_segments.shape
 
 
+def test_dense_raster_beats_sparse_raster_uniformity():
+    """A dense raster (rows well within the spray footprint) yields a near-
+    uniform interior film; a sparse raster (rows far apart) leaves dry stripes
+    between passes, so its CU is markedly worse — periodic banding is caught."""
+    roi = (0.1, 0.3, 0.1, 0.3)
+
+    def cu(pitch_mm):
+        cfg = SimConfig(n_droplets=150_000, seed=3,
+                        path=PathConfig(gcode=_raster(size_mm=400, pitch_mm=pitch_mm)))
+        field = analysis.deposition_map(Simulator(cfg).run(), SimConfig(), cell_size=0.01)
+        return analysis.uniformity(field, roi=roi).christiansen_cu
+
+    dense_cu, sparse_cu = cu(10), cu(200)
+    assert dense_cu > 0.7
+    assert dense_cu > sparse_cu + 0.3
+
+
 def test_path_without_spray_moves_raises():
     """A path of only G0 travel has nothing to spray."""
     cfg = SimConfig(seed=0, path=PathConfig(gcode="G21 G90\nG0 X100 Y100 Z150\n"))

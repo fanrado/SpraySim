@@ -507,6 +507,36 @@ def _uniform_field(value, ny=10, nx=10, cell=1e-2):
     return analysis.DepositionField(x_edges, y_edges, t, cell, 1.0)
 
 
+def test_deposition_field_mean_matches_wetted_cells_only():
+    """mean() averages over the wetted (non-zero) cells only, ignoring dry
+    ones — the same nonzero-only default analysis.uniformity() applies when
+    no ROI is given, so the two should agree."""
+    ny, nx, cell = 10, 10, 1e-2
+    t = np.zeros((ny, nx))
+    t[:, :5] = 3e-6  # half the cells wetted at a known thickness
+    x_edges = np.arange(nx + 1) * cell
+    y_edges = np.arange(ny + 1) * cell
+    field = analysis.DepositionField(x_edges, y_edges, t, cell, 1.0)
+
+    assert field.mean() == pytest.approx(3e-6)
+    assert field.mean() == pytest.approx(analysis.uniformity(field).mean_thickness)
+
+
+def test_deposition_field_mean_of_dry_field_is_zero():
+    """No wetted cells => mean() is 0.0 (guards the division, doesn't raise/NaN)."""
+    field = _uniform_field(0.0)
+    assert field.mean() == 0.0
+
+
+def test_deposition_field_mean_on_real_run():
+    """mean() on a real run's field matches manually averaging its nonzero cells."""
+    cfg = SimConfig(n_droplets=800, seed=4)
+    result = Simulator(cfg).run()
+    field = analysis.deposition_map(result, cfg)
+    nonzero = field.thickness[field.thickness > 0.0]
+    assert field.mean() == pytest.approx(float(nonzero.mean()))
+
+
 def test_uniformity_of_uniform_field_is_perfect():
     u = analysis.uniformity(_uniform_field(5e-6))
     assert u.cv == pytest.approx(0.0, abs=1e-12)

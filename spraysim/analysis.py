@@ -72,6 +72,11 @@ class DepositionField:
         """Boolean mask of cells that received any deposit (the wetted region)."""
         return self.thickness > 0.0
 
+    def mean(self) -> float:
+        """Mean dry thickness (m) over the wetted (non-zero) cells."""
+        mask = self.nonzero_mask()
+        return float(self.thickness[mask].mean()) if mask.any() else 0.0
+
     def total_dry_volume(self) -> float:
         return float(self.thickness.sum()) * self.cell_area
 
@@ -180,6 +185,17 @@ def _roi_mask(field: DepositionField,
     in_x = (xc >= xmin) & (xc <= xmax)
     in_y = (yc >= ymin) & (yc <= ymax)
     return np.outer(in_y, in_x)
+
+
+def target_roi(result: SimResult) -> tuple[float, float, float, float] | None:
+    """The natural ROI rectangle for a run's uniformity: the toolpath extent for
+    a path run, or ``None`` (→ the wetted region) for a single fixed-spot run."""
+    seg = result.path_segments
+    if seg is not None and len(seg):
+        xs = np.concatenate([seg[:, 0], seg[:, 2]])
+        ys = np.concatenate([seg[:, 1], seg[:, 3]])
+        return (float(xs.min()), float(xs.max()), float(ys.min()), float(ys.max()))
+    return None
 
 
 def uniformity(

@@ -54,6 +54,34 @@ Set `GCODE=` (or `--gcode file.gcode`) to spray while moving along a path
 (`G1` = spray, `G0` = travel) instead of a fixed spot; the deposited film and its
 uniformity (CV / Christiansen CU / coverage) are reported per run.
 
+To turn artwork into a toolpath, `svg_to_gcode.py` converts an SVG file's
+`<path>` elements (lines, Bezier curves, elliptical arcs — all linearised) into
+G-code `run.py --gcode` can consume:
+
+```bash
+python svg_to_gcode.py drawing.svg                 # -> drawing.gcode
+python svg_to_gcode.py drawing.svg --home --z-offset-mm 150 --feed 2000
+```
+
+Both the leading homing move (`--home`) and the Z height (`--z-offset-mm`) are
+optional — by default neither is written, so the path sprays directly and the
+simulator's `--standoff-mm` sets the height instead. See `python
+svg_to_gcode.py --help` and the module docstring for scale/units, curve
+tolerance and Y-flip options.
+
+`gcode_to_svg.py` converts the other way — G-code back to SVG — and is the
+validator for `svg_to_gcode.py`: its Y-flip is the exact inverse of
+`svg_to_gcode`'s (both reflect about the *drawn* geometry's own bounding box),
+so an SVG round-tripped through `svg_to_gcode.py` and then `gcode_to_svg.py`
+reproduces the original artwork (exactly for straight edges, and within
+`--tolerance-mm` of the original curve for Beziers/arcs, since those are
+linearised into the G-code in between):
+
+```bash
+python gcode_to_svg.py path.gcode                 # -> path.svg
+python gcode_to_svg.py path.gcode --show-travel    # + dashed G0 travel moves
+```
+
 `main.sh` just translates a config into a `run.py` invocation, so you can also run
 the CLI directly:
 

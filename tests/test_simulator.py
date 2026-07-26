@@ -301,6 +301,69 @@ def test_npz_round_trip_missing_uniformity_is_none(tmp_path):
     assert storage.load_uniformity(path) is None
 
 
+def test_npz_round_trip_uniformity_all_fields_match(tmp_path):
+    """Every uni_* field (not just the three the round-trip test spot-checks)
+    survives the archive and matches a fresh recomputation, including the
+    fields (cell_size, coverage_threshold) that test_npz_round_trip_preserves_
+    result_and_config doesn't check."""
+    cfg = SimConfig(n_droplets=400, seed=7)
+    result = Simulator(cfg).run()
+    path = storage.save_result(result, cfg, tmp_path / "run.npz")
+
+    loaded, loaded_cfg = storage.load_result(path)
+    stored = storage.load_uniformity(path)
+    field = analysis.deposition_map(loaded, loaded_cfg)
+    recomputed = analysis.uniformity(field, roi=analysis.target_roi(loaded))
+
+    assert stored["cell_size"] == pytest.approx(field.cell_size)
+    assert stored["coverage_threshold"] == pytest.approx(recomputed.coverage_threshold)
+    assert stored["mean_thickness"] == pytest.approx(recomputed.mean_thickness)
+    assert stored["cv"] == pytest.approx(recomputed.cv)
+    assert stored["christiansen_cu"] == pytest.approx(recomputed.christiansen_cu)
+    assert stored["coverage_fraction"] == pytest.approx(recomputed.coverage_fraction)
+
+
+def test_npz_round_trip_path_run_uniformity_uses_toolpath_roi(tmp_path):
+    """For a path run, save_result must score uniformity over the toolpath
+    extent (analysis.target_roi), not the plain wetted-region default —
+    otherwise a saved archive would disagree with what the CLI/report show
+    for the same run."""
+    cfg = SimConfig(n_droplets=6000, seed=3, path=PathConfig(gcode=_raster()))
+    result = Simulator(cfg).run()
+    path = storage.save_result(result, cfg, tmp_path / "path_run.npz")
+
+    stored = storage.load_uniformity(path)
+    assert stored is not None
+
+    loaded, loaded_cfg = storage.load_result(path)
+    field = analysis.deposition_map(loaded, loaded_cfg)
+    roi = analysis.target_roi(loaded)
+    assert roi is not None  # a path run has a real toolpath rectangle
+
+    on_roi = analysis.uniformity(field, roi=roi)
+    off_roi = analysis.uniformity(field)  # default: wetted-region only
+
+    assert stored["christiansen_cu"] == pytest.approx(on_roi.christiansen_cu)
+    assert stored["coverage_fraction"] == pytest.approx(on_roi.coverage_fraction)
+    # Overspray lands outside the exact toolpath rectangle, so scoring the
+    # wetted region instead of the toolpath ROI is not a no-op distinction.
+    assert on_roi.n_cells != off_roi.n_cells
+
+
+def test_npz_round_trip_uncompressed_persists_uniformity(tmp_path):
+    """compress=False takes a different np.savez code path; uni_* must still
+    be written and readable back."""
+    cfg = SimConfig(n_droplets=200, seed=2)
+    result = Simulator(cfg).run()
+    path = storage.save_result(result, cfg, tmp_path / "uncompressed.npz", compress=False)
+
+    stored = storage.load_uniformity(path)
+    assert stored is not None
+    loaded, loaded_cfg = storage.load_result(path)
+    recomputed = analysis.uniformity(analysis.deposition_map(loaded, loaded_cfg))
+    assert stored["christiansen_cu"] == pytest.approx(recomputed.christiansen_cu)
+
+
 def test_npz_round_trip_with_derived_count(tmp_path):
     """A derived-count run (n_droplets=None) round-trips the None sentinel."""
     cfg = SimConfig(spray_duration=0.05, seed=5)  # n_droplets=None => derived

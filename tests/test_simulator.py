@@ -1,6 +1,7 @@
 """Sanity tests for the spray simulator's physics and bookkeeping."""
 
 import math
+import sys
 import warnings
 
 import numpy as np
@@ -608,6 +609,62 @@ def test_gcode_units_relative_and_arc_rejection():
     assert rel[1].end[0] == pytest.approx(0.02)       # 10 mm + 10 mm
     with pytest.raises(ValueError, match="Arc"):
         gcode.parse_gcode("G1 X0 Y0\nG2 X1 Y1 I0.5 J0")
+
+
+def test_gcode_main_prints_summary_matching_parsed_moves(tmp_path, capsys, monkeypatch):
+    """`python gcode.py file.gcode` reports move counts, spray length/time and
+    bounds that match calling the library functions directly on the same file."""
+    path = tmp_path / "path.gcode"
+    path.write_text("G21 G90\nG0 X0 Y0 Z150\nG1 F3000 X100 Y0\nG0 Y10\nG1 X0 Y10\n")
+
+    monkeypatch.setattr(sys, "argv", ["gcode.py", str(path)])
+    gcode.main()
+    out = capsys.readouterr().out
+
+    moves = gcode.load_moves(str(path))
+    spray = [m for m in moves if m.spray_on]
+    travel = [m for m in moves if not m.spray_on]
+    xmin, xmax, ymin, ymax = gcode.bounds(moves)
+
+    assert f"{len(moves)} moves: {len(spray)} spray (G1), {len(travel)} travel (G0)" in out
+    assert f"{gcode.spray_length(moves) * 1.0e3:.1f} mm" in out
+    assert f"{gcode.total_spray_time(moves):.3f} s" in out
+    assert (f"x [{xmin * 1.0e3:.1f}, {xmax * 1.0e3:.1f}], "
+            f"y [{ymin * 1.0e3:.1f}, {ymax * 1.0e3:.1f}]") in out
+
+
+def test_gcode_main_feed_override_ignores_file_feed(tmp_path, capsys, monkeypatch):
+    """--feed forces every move's feed rate (mm/min) and ignores the file's F
+    word, so the reported spray time changes to match feed_override, not the
+    file's F3000."""
+    path = tmp_path / "path.gcode"
+    path.write_text("G21 G90\nG0 X0 Y0 Z150\nG1 F3000 X100 Y0\n")
+
+    default_time = gcode.total_spray_time(gcode.load_moves(str(path)))
+    override_feed_ms = 6000 * 1.0e-3 / 60.0
+    override_time = gcode.total_spray_time(
+        gcode.load_moves(str(path), feed_override=override_feed_ms))
+    assert override_time == pytest.approx(default_time / 2)  # double the feed
+
+    monkeypatch.setattr(sys, "argv", ["gcode.py", str(path), "--feed", "6000"])
+    gcode.main()
+    out = capsys.readouterr().out
+    assert f"{override_time:.3f} s" in out
+    assert f"{default_time:.3f} s" not in out
+
+
+def test_gcode_main_accepts_inline_text(capsys, monkeypatch):
+    """The CLI's positional arg is passed straight to load_moves(), which
+    accepts inline multi-line G-code text as well as a file path."""
+    text = "G21 G90\nG0 X0 Y0 Z150\nG1 F3000 X50 Y0\n"
+    monkeypatch.setattr(sys, "argv", ["gcode.py", text])
+    gcode.main()
+    out = capsys.readouterr().out
+
+    moves = gcode.load_moves(text)
+    spray = [m for m in moves if m.spray_on]
+    travel = [m for m in moves if not m.spray_on]
+    assert f"{len(moves)} moves: {len(spray)} spray (G1), {len(travel)} travel (G0)" in out
 
 
 def test_emit_path_places_droplets_along_segments_with_carriage():

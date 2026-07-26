@@ -274,6 +274,32 @@ def test_npz_round_trip_preserves_result_and_config(tmp_path):
     rerun = Simulator(loaded_cfg).run()
     assert np.array_equal(rerun.landing_positions, result.landing_positions)
 
+    # Uniformity metrics are stored alongside the run and match a fresh
+    # recomputation from the loaded arrays.
+    stored = storage.load_uniformity(path)
+    assert stored is not None
+    recomputed = analysis.uniformity(analysis.deposition_map(loaded, loaded_cfg))
+    assert stored["christiansen_cu"] == pytest.approx(recomputed.christiansen_cu)
+    assert stored["cv"] == pytest.approx(recomputed.cv)
+    assert stored["coverage_fraction"] == pytest.approx(recomputed.coverage_fraction)
+    assert stored["mean_thickness"] == pytest.approx(recomputed.mean_thickness)
+
+
+def test_npz_round_trip_missing_uniformity_is_none(tmp_path):
+    """Archives written before uni_* existed still load; load_uniformity is None."""
+    cfg = SimConfig(n_droplets=50, seed=1)
+    result = Simulator(cfg).run()
+    path = storage.save_result(result, cfg, tmp_path / "pre_uniformity.npz")
+
+    # Simulate an older archive by stripping the uni_* keys.
+    with np.load(path) as z:
+        data = {k: z[k] for k in z.files if not k.startswith("uni_")}
+    np.savez_compressed(path, **data)
+
+    loaded, loaded_cfg = storage.load_result(path)  # must not raise
+    assert np.array_equal(loaded.landing_positions, result.landing_positions)
+    assert storage.load_uniformity(path) is None
+
 
 def test_npz_round_trip_with_derived_count(tmp_path):
     """A derived-count run (n_droplets=None) round-trips the None sentinel."""

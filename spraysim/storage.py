@@ -145,6 +145,50 @@ def _rebuild_path(z: np.lib.npyio.NpzFile) -> PathConfig | None:
     )
 
 
+def _flatten_uniformity(result: SimResult, config: SimConfig) -> dict[str, float]:
+    """Uniformity metrics computed at save time, over the run's natural ROI (the
+    toolpath extent for a path run, else the wetted region) — so a saved archive
+    carries the same CU/CV/coverage the CLI and report show for that run.
+
+    Imported lazily: :mod:`spraysim.analysis` pulls in :mod:`spraysim.simulator`
+    (for ``SimResult``) the same way this module does, and a local import keeps
+    that dependency from becoming a package-init-order concern.
+    """
+    from . import analysis
+
+    field = analysis.deposition_map(result, config)
+    stats = analysis.uniformity(field, roi=analysis.target_roi(result))
+    return {
+        "uni_cell_size": field.cell_size,
+        "uni_mean_thickness": stats.mean_thickness,
+        "uni_cv": stats.cv,
+        "uni_christiansen_cu": stats.christiansen_cu,
+        "uni_coverage_fraction": stats.coverage_fraction,
+        "uni_coverage_threshold": stats.coverage_threshold,
+    }
+
+
+def load_uniformity(path: str | Path) -> dict[str, float] | None:
+    """Read the ``uni_*`` uniformity metrics stored by :func:`save_result`.
+
+    Returns ``None`` for archives written before this field existed (use
+    ``analysis.uniformity(analysis.deposition_map(*load_result(path)))`` to
+    recompute them from the raw arrays instead).
+    """
+    path = Path(path)
+    with np.load(path) as z:
+        if "uni_christiansen_cu" not in z:
+            return None
+        return {
+            "cell_size": float(z["uni_cell_size"]),
+            "mean_thickness": float(z["uni_mean_thickness"]),
+            "cv": float(z["uni_cv"]),
+            "christiansen_cu": float(z["uni_christiansen_cu"]),
+            "coverage_fraction": float(z["uni_coverage_fraction"]),
+            "coverage_threshold": float(z["uni_coverage_threshold"]),
+        }
+
+
 def save_result(
     result: SimResult,
     config: SimConfig,
@@ -189,6 +233,7 @@ def save_result(
         else np.empty((0, 4), dtype=float),
     }
     data.update(_flatten_config(config))
+    data.update(_flatten_uniformity(result, config))
 
     saver = np.savez_compressed if compress else np.savez
     saver(path, **data)

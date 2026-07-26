@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "SpraySim",
+  "project_id": "e0497c96-b660-4076-8451-af38114cb320"
+}

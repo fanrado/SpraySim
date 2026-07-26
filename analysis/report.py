@@ -198,13 +198,9 @@ def _fmt(v):
 def _reported_uniformity(field, result):
     """Uniformity over the coated target: the toolpath extent for a path run,
     else the wetted region. Returns (UniformityStats, roi_label)."""
-    seg = result.path_segments
-    if seg is not None and len(seg):
-        xs = np.concatenate([seg[:, 0], seg[:, 2]])
-        ys = np.concatenate([seg[:, 1], seg[:, 3]])
-        roi = (float(xs.min()), float(xs.max()), float(ys.min()), float(ys.max()))
-        return analysis.uniformity(field, roi=roi), "path area"
-    return analysis.uniformity(field), "wetted"
+    roi = analysis.target_roi(result)
+    label = "path area" if roi is not None else "wetted"
+    return analysis.uniformity(field, roi=roi), label
 
 
 def _deposition_page(pdf: PdfPages, name, result, config) -> None:

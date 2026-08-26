@@ -579,7 +579,20 @@ def main() -> None:
                    help="X offset (mm) applied after normalisation (default: 0)")
     p.add_argument("--origin-y-mm", type=float, default=0.0,
                    help="Y offset (mm) applied after normalisation (default: 0)")
+    p.add_argument("--fit-box-mm", type=float, nargs=4, default=None,
+                   metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
+                   help="fit and center the artwork inside this mm box "
+                        "(XMIN YMIN XMAX YMAX), preserving aspect ratio; overrides "
+                        "--scale/--origin-*-mm/--no-normalize (mutually exclusive "
+                        "with them)")
     args = p.parse_args()
+
+    if args.fit_box_mm is not None and (
+        args.scale is not None or args.no_normalize
+        or args.origin_x_mm or args.origin_y_mm
+    ):
+        p.error("--fit-box-mm cannot be combined with --scale, "
+                 "--origin-x-mm/--origin-y-mm, or --no-normalize")
 
     svg_path = Path(args.svg)
     out_path = args.out or svg_path.with_suffix(".gcode")
@@ -592,6 +605,7 @@ def main() -> None:
             flip_y=not args.no_flip_y,
             normalize=not args.no_normalize,
             origin_mm=(args.origin_x_mm, args.origin_y_mm),
+            fit_box_mm=tuple(args.fit_box_mm) if args.fit_box_mm else None,
         )
     except (ET.ParseError, ValueError, OSError) as exc:
         p.error(str(exc))

@@ -61,13 +61,17 @@ G-code `run.py --gcode` can consume:
 ```bash
 python svg_to_gcode.py drawing.svg                 # -> drawing.gcode
 python svg_to_gcode.py drawing.svg --home --z-offset-mm 150 --feed 2000
+python svg_to_gcode.py drawing.svg --fit-box-mm 0 0 300 200
 ```
 
 Both the leading homing move (`--home`) and the Z height (`--z-offset-mm`) are
 optional — by default neither is written, so the path sprays directly and the
-simulator's `--standoff-mm` sets the height instead. See `python
-svg_to_gcode.py --help` and the module docstring for scale/units, curve
-tolerance and Y-flip options.
+simulator's `--standoff-mm` sets the height instead. `--fit-box-mm` fits and
+centers the artwork inside the given mm box (preserving aspect ratio),
+overriding the SVG's own viewBox/width/height-derived scale — so the same
+source SVG can be rendered to different target sizes without hand-computing
+`--scale`. See `python svg_to_gcode.py --help` and the module docstring for
+scale/units, curve tolerance and Y-flip options.
 
 `gcode_to_svg.py` converts the other way — G-code back to SVG — and is the
 validator for `svg_to_gcode.py`: its Y-flip is the exact inverse of

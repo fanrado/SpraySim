@@ -25,6 +25,21 @@ from those — the one unambiguous case. Anything else (unitless or ``px``
 width, no viewBox, ...) falls back to 1:1; pass ``--scale`` to override
 either way.
 
+Fitting to a fixed box
+-----------------------
+``--fit-box-mm XMIN YMIN XMAX YMAX`` fits and centers the artwork inside that
+mm box, preserving aspect ratio (uniform scale = ``min(box_width/art_width,
+box_height/art_height)``) — regardless of the SVG's own ``viewBox``/
+``width``/``height`` units. This means the same source SVG, even one authored
+with real physical dimensions (e.g. for a laser cutter), can be re-rendered
+to a different output size just by changing the box, without hand-computing
+``--scale``.
+
+It is mutually exclusive with ``--scale``, ``--origin-x-mm``/
+``--origin-y-mm``, and ``--no-normalize``, since it fully determines both
+size and position itself. It does not affect ``Z`` or homing — ``--home``
+and ``--z-offset-mm`` remain independent, off-by-default flags.
+
 Homing and Z are both optional
 -------------------------------
 Neither is required. Without ``--z-offset-mm``, no ``Z`` is written anywhere

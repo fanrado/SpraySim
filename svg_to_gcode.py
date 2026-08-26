@@ -386,6 +386,45 @@ def _transform(subpaths: list[Subpath], sx: float, sy: float,
     return [[(x * sx + dx, y * sy + dy) for x, y in sp] for sp in subpaths]
 
 
+def _fit_to_box(
+    subpaths: list[Subpath], box: tuple[float, float, float, float]
+) -> list[Subpath]:
+    """Uniformly scale and center ``subpaths`` to fit inside ``box`` (mm).
+
+    ``box`` is ``(xmin, ymin, xmax, ymax)``. Aspect ratio is preserved by
+    scaling both axes by the same factor, chosen so the artwork's bounding
+    box fits within the target box on whichever axis is tighter; the result
+    is then centered in the box on both axes.
+    """
+    box_xmin, box_ymin, box_xmax, box_ymax = box
+    if box_xmax <= box_xmin or box_ymax <= box_ymin:
+        raise ValueError(f"invalid fit box (must have xmax > xmin and ymax > ymin): {box!r}")
+    box_w = box_xmax - box_xmin
+    box_h = box_ymax - box_ymin
+
+    bx_min, bx_max, by_min, by_max = _bbox(subpaths)
+    width = bx_max - bx_min
+    height = by_max - by_min
+
+    if width == 0.0 and height == 0.0:
+        scale = 1.0
+    elif width == 0.0:
+        scale = box_h / height
+    elif height == 0.0:
+        scale = box_w / width
+    else:
+        scale = min(box_w / width, box_h / height)
+
+    subpaths = _transform(subpaths, scale, scale, 0.0, 0.0)
+
+    sx_min, sx_max, sy_min, sy_max = _bbox(subpaths)
+    scaled_w = sx_max - sx_min
+    scaled_h = sy_max - sy_min
+    dx = box_xmin + (box_w - scaled_w) / 2.0 - sx_min
+    dy = box_ymin + (box_h - scaled_h) / 2.0 - sy_min
+    return _transform(subpaths, 1.0, 1.0, dx, dy)
+
+
 def convert(
     svg_path: str | Path,
     *,
@@ -394,6 +433,7 @@ def convert(
     flip_y: bool = True,
     normalize: bool = True,
     origin_mm: tuple[float, float] = (0.0, 0.0),
+    fit_box_mm: tuple[float, float, float, float] | None = None,
 ) -> tuple[list[Subpath], list[str]]:
     """Read ``svg_path`` and return (subpaths in mm, warnings).
 
@@ -444,6 +484,9 @@ def convert(
     ox, oy = origin_mm
     if ox or oy:
         subpaths = _transform(subpaths, 1.0, 1.0, ox, oy)
+
+    if fit_box_mm is not None:
+        subpaths = _fit_to_box(subpaths, fit_box_mm)
 
     return subpaths, warnings
 

@@ -17,10 +17,10 @@ cd "$SCRIPT_DIR"
 
 PYTHON="${PYTHON:-python}"
 
-FIT_XMIN=0
-FIT_YMIN=0
-FIT_XMAX=300
-FIT_YMAX=200
+FIT_XMIN=50
+FIT_YMIN=50
+FIT_XMAX=150
+FIT_YMAX=150
 OUTPUT_PATH="output/example_gcode_svg.gcode"
 
 SVG_PATH="${1:-}"

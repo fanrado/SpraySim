@@ -40,6 +40,16 @@ It is mutually exclusive with ``--scale``, ``--origin-x-mm``/
 size and position itself. It does not affect ``Z`` or homing — ``--home``
 and ``--z-offset-mm`` remain independent, off-by-default flags.
 
+Closed-loop return pass
+------------------------
+``--closed-loop`` is opt-in (default: off). When set, after the forward path
+finishes, every waypoint it visited (the home point, if any, then each
+subpath's points, in emission order) is retraced in exact reverse order as
+spray-off ``G0`` travel moves, ending back at the original starting position.
+``--return-feed`` sets the feed rate (mm/min) for that return pass; it
+requires ``--closed-loop`` and defaults to ``DEFAULT_RETURN_FEED_MM_MIN``
+(2x ``DEFAULT_FEED_MM_MIN``) when omitted.
+
 Homing and Z are both optional
 -------------------------------
 Neither is required. Without ``--z-offset-mm``, no ``Z`` is written anywhere

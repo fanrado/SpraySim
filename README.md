@@ -73,6 +73,12 @@ source SVG can be rendered to different target sizes without hand-computing
 `--scale`. See `python svg_to_gcode.py --help` and the module docstring for
 scale/units, curve tolerance and Y-flip options.
 
+For repeated/continuous multi-pass spraying, where the sprayer needs to get
+back to its starting position between runs without a discontinuous jump,
+`--closed-loop` appends a spray-off return pass that retraces the forward
+path in reverse back to the start; `--return-feed` sets its feed rate
+(requires `--closed-loop`, defaults to 2x `--feed`).
+
 `gcode_to_svg.py` converts the other way — G-code back to SVG — and is the
 validator for `svg_to_gcode.py`: its Y-flip is the exact inverse of
 `svg_to_gcode`'s (both reflect about the *drawn* geometry's own bounding box),

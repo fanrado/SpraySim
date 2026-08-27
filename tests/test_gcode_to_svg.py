@@ -66,6 +66,17 @@ def test_no_flip_keeps_raw_coordinates():
     assert spray == [[(0.0, 0.0), (10.0, 10.0)]]
 
 
+def test_flip_falls_back_to_travel_bbox_when_no_spray():
+    """prepare_subpaths' docstring promises the flip falls back to the travel
+    bbox when there's no spray geometry to reflect about — untested by the
+    existing spray-bbox-only flip tests, since they all include spray moves."""
+    moves = _moves("G21 G90\nG0 X10 Y0\nG0 X10 Y10\n")  # travel only, no G1
+    spray, travel = g2s.prepare_subpaths(moves, show_travel=True, flip_y=True)
+    assert spray == []
+    # Points (0,0),(10,0),(10,10); y in [0,10] before flip, reflected 0<->10.
+    assert travel == [[(0.0, 10.0), (10.0, 10.0), (10.0, 0.0)]]
+
+
 def test_double_flip_is_identity():
     """Flipping twice about the same bbox must recover the original points —
     this is exactly what makes gcode_to_svg the inverse of svg_to_gcode."""
@@ -96,6 +107,18 @@ def test_render_svg_travel_drawn_dashed_and_spray_solid(tmp_path):
     text = out.read_text()
     assert "stroke-dasharray" in text  # travel
     assert text.count("<path") == 2
+
+
+def test_render_svg_travel_only_draws_only_dashed_path(tmp_path):
+    """With no spray geometry, render_svg must still produce a valid SVG
+    containing just the dashed travel path (the spray <path> element is
+    conditionally skipped in the implementation when spray_d is empty)."""
+    out = tmp_path / "out.svg"
+    g2s.render_svg([], [[(0.0, 0.0), (10.0, 0.0)]], out)
+    text = out.read_text()
+    assert text.count("<path") == 1
+    assert "stroke-dasharray" in text
+    assert "stroke-linecap" not in text  # the solid spray-path styling
 
 
 def test_render_svg_raises_on_empty_input(tmp_path):
@@ -135,6 +158,35 @@ def test_cli_inline_text_requires_out(capsys, monkeypatch):
     with pytest.raises(SystemExit):
         g2s.main()
     assert "--out is required" in capsys.readouterr().err
+
+
+def test_cli_show_travel_flag_included_in_output(tmp_path, capsys, monkeypatch):
+    """--show-travel must both draw the travel path and report a non-zero
+    travel subpath count (default CLI usage, with no --show-travel, doesn't
+    exercise this at all)."""
+    gcode_path = tmp_path / "path.gcode"
+    gcode_path.write_text("G21 G90\nG0 X10 Y0\nG1 F3000 X20 Y0\n")
+    out = tmp_path / "path.svg"
+
+    monkeypatch.setattr(
+        sys, "argv", ["gcode_to_svg.py", str(gcode_path), "-o", str(out), "--show-travel"]
+    )
+    g2s.main()
+    printed = capsys.readouterr().out
+
+    assert "1 spray subpath(s), 1 travel subpath(s)" in printed
+    assert "stroke-dasharray" in out.read_text()
+
+
+def test_cli_missing_gcode_file_errors_clearly(tmp_path, capsys, monkeypatch):
+    """A file-shaped path that doesn't exist must fail via argparse's error
+    exit, not an uncaught traceback (gcode.load_moves raises OSError reading
+    it, which main() is supposed to catch and report through p.error)."""
+    missing = tmp_path / "does_not_exist.gcode"
+    monkeypatch.setattr(sys, "argv", ["gcode_to_svg.py", str(missing), "-o", str(tmp_path / "x.svg")])
+    with pytest.raises(SystemExit):
+        g2s.main()
+    assert "does_not_exist.gcode" in capsys.readouterr().err
 
 
 # --- round trip with svg_to_gcode.py: the actual validation use case -------- #

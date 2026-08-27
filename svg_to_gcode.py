@@ -76,6 +76,7 @@ Point = tuple[float, float]
 Subpath = list[Point]
 
 DEFAULT_FEED_MM_MIN = 3000.0   # mm/min, matches spraysim.gcode.DEFAULT_FEED
+DEFAULT_RETURN_FEED_MM_MIN = 2.0 * DEFAULT_FEED_MM_MIN  # mm/min, closed-loop return pass
 DEFAULT_TOLERANCE_MM = 0.2     # mm, max chord error when linearising curves/arcs
 
 _UNIT_TO_MM = {
@@ -517,6 +518,8 @@ def moves_to_gcode(
     z_mm: float | None = None,
     home: bool = False,
     precision: int = 3,
+    closed_loop: bool = False,
+    return_feed_mm_min: float | None = None,
 ) -> str:
     """Render subpaths (mm) as G-code: G0 travel to each subpath, G1 within it.
 
@@ -527,12 +530,20 @@ def moves_to_gcode(
     first (the home move, or else the first subpath's travel move) — every
     later move carries it forward implicitly, the same way a hand-written
     raster does (see ``examples/raster.gcode``).
+
+    ``closed_loop``, when true, appends a return pass after the forward path:
+    every waypoint emitted going forward (the home point, if any, then each
+    subpath's points, in emission order) is retraced in reverse as ``G0``
+    travel moves (spray off), ending back at the very first forward waypoint.
+    ``return_feed_mm_min`` sets the feed rate for that pass (default
+    ``DEFAULT_RETURN_FEED_MM_MIN`` when not given).
     """
     def fmt(v: float) -> str:
         return f"{v:.{precision}f}"
 
     lines = ["G21", "G90"]
     wrote_z = False
+    waypoints: list[Point] = []
 
     def z_suffix() -> str:
         nonlocal wrote_z
@@ -543,14 +554,26 @@ def moves_to_gcode(
 
     if home:
         lines.append(f"G0 X{fmt(0.0)} Y{fmt(0.0)}{z_suffix()}")
+        waypoints.append((0.0, 0.0))
 
     lines.append(f"G1 F{feed_mm_min:g}")
 
     for sp in subpaths:
         x0, y0 = sp[0]
         lines.append(f"G0 X{fmt(x0)} Y{fmt(y0)}{z_suffix()}")
+        waypoints.append((x0, y0))
         for x, y in sp[1:]:
             lines.append(f"G1 X{fmt(x)} Y{fmt(y)}")
+            waypoints.append((x, y))
+
+    if closed_loop:
+        return_feed = (
+            return_feed_mm_min if return_feed_mm_min is not None
+            else DEFAULT_RETURN_FEED_MM_MIN
+        )
+        lines.append(f"G0 F{return_feed:g}")
+        for x, y in reversed(waypoints[:-1]):
+            lines.append(f"G0 X{fmt(x)} Y{fmt(y)}")
 
     return "\n".join(lines) + "\n"
 

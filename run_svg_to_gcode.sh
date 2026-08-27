@@ -18,11 +18,11 @@ cd "$SCRIPT_DIR"
 
 PYTHON="${PYTHON:-python}"
 
-FIT_XMIN=50
-FIT_YMIN=50
-FIT_XMAX=150
-FIT_YMAX=150
-OUTPUT_PATH="output/example_gcode_svg.gcode"
+FIT_XMIN=0
+FIT_YMIN=0
+FIT_XMAX=120
+FIT_YMAX=120
+OUTPUT_PATH="output/paths_0_to_12cm.gcode"
 CLOSED_LOOP=true
 RETURN_FEED=""
 

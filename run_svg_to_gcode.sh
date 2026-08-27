@@ -7,7 +7,8 @@
 #   ./run_svg_to_gcode.sh drawing.svg
 #
 # Edit FIT_XMIN/FIT_YMIN/FIT_XMAX/FIT_YMAX and OUTPUT_PATH below to change the
-# target box and output location.
+# target box and output location. Set CLOSED_LOOP=true to append a return
+# pass (--closed-loop); RETURN_FEED optionally sets its feed rate.
 #
 set -euo pipefail
 
@@ -22,6 +23,8 @@ FIT_YMIN=50
 FIT_XMAX=150
 FIT_YMAX=150
 OUTPUT_PATH="output/example_gcode_svg.gcode"
+CLOSED_LOOP=false
+RETURN_FEED=""
 
 SVG_PATH="${1:-}"
 if [[ -z "$SVG_PATH" ]]; then
@@ -34,6 +37,15 @@ if [[ ! -f "$SVG_PATH" ]]; then
     exit 1
 fi
 
+EXTRA_ARGS=()
+if [[ "$CLOSED_LOOP" == "true" ]]; then
+    EXTRA_ARGS+=(--closed-loop)
+    if [[ -n "$RETURN_FEED" ]]; then
+        EXTRA_ARGS+=(--return-feed "$RETURN_FEED")
+    fi
+fi
+
 # No --home or --z-offset-mm: this script never emits a homing or Z move.
 "$PYTHON" svg_to_gcode.py "$SVG_PATH" -o "$OUTPUT_PATH" \
-    --fit-box-mm "$FIT_XMIN" "$FIT_YMIN" "$FIT_XMAX" "$FIT_YMAX"
+    --fit-box-mm "$FIT_XMIN" "$FIT_YMIN" "$FIT_XMAX" "$FIT_YMAX" \
+    ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}

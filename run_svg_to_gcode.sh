@@ -23,7 +23,7 @@ FIT_YMIN=50
 FIT_XMAX=150
 FIT_YMAX=150
 OUTPUT_PATH="output/example_gcode_svg.gcode"
-CLOSED_LOOP=false
+CLOSED_LOOP=true
 RETURN_FEED=""
 
 SVG_PATH="${1:-}"

@@ -623,6 +623,13 @@ def main() -> None:
                         "(XMIN YMIN XMAX YMAX), preserving aspect ratio; overrides "
                         "--scale/--origin-*-mm/--no-normalize (mutually exclusive "
                         "with them)")
+    p.add_argument("--closed-loop", action="store_true",
+                   help="append a return pass after the forward path, retracing "
+                        "every waypoint in reverse as G0 travel moves (spray off) "
+                        "back to the start (default: off)")
+    p.add_argument("--return-feed", type=float, default=None,
+                   help="feed rate (mm/min) for the closed-loop return pass "
+                        "(requires --closed-loop; default: 2x --feed)")
     args = p.parse_args()
 
     if args.fit_box_mm is not None and (
@@ -631,6 +638,9 @@ def main() -> None:
     ):
         p.error("--fit-box-mm cannot be combined with --scale, "
                  "--origin-x-mm/--origin-y-mm, or --no-normalize")
+
+    if args.return_feed is not None and not args.closed_loop:
+        p.error("--return-feed requires --closed-loop")
 
     svg_path = Path(args.svg)
     out_path = args.out or svg_path.with_suffix(".gcode")
@@ -654,6 +664,7 @@ def main() -> None:
     text = moves_to_gcode(
         subpaths, feed_mm_min=args.feed, z_mm=args.z_offset_mm,
         home=args.home, precision=args.precision,
+        closed_loop=args.closed_loop, return_feed_mm_min=args.return_feed,
     )
     out_path.write_text(text)
 

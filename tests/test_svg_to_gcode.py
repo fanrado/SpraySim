@@ -2,6 +2,7 @@
 resulting G-code's compatibility with spraysim.gcode."""
 
 import math
+import sys
 
 import pytest
 
@@ -246,3 +247,258 @@ def test_feed_override_shortens_spray_time(tmp_path):
     slow_moves = gcode.parse_gcode(slow)
     fast_moves = gcode.parse_gcode(fast)
     assert gcode.total_spray_time(fast_moves) < gcode.total_spray_time(slow_moves)
+
+
+# --- moves_to_gcode(closed_loop=True): return pass ---------------------------- #
+
+def test_closed_loop_false_is_no_regression():
+    subpaths = [[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)], [(5.0, 5.0), (15.0, 5.0)]]
+    baseline = s2g.moves_to_gcode(subpaths, home=True, z_mm=150.0)
+    explicit = s2g.moves_to_gcode(subpaths, home=True, z_mm=150.0, closed_loop=False)
+    assert explicit == baseline
+
+
+def test_closed_loop_return_waypoints_are_exact_reverse_of_forward_pass():
+    subpaths = [[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]]
+    text = s2g.moves_to_gcode(subpaths, home=False, closed_loop=True)
+    lines = text.splitlines()
+
+    return_start = next(i for i, l in enumerate(lines) if l.startswith("G0 F"))
+    return_lines = lines[return_start + 1:]
+    return_coords = [
+        tuple(float(tok[1:]) for tok in l.split()[1:]) for l in return_lines
+    ]
+    # Forward waypoints, reversed, excluding the point already reached
+    # (the end of the forward path).
+    assert return_coords == [(10.0, 0.0), (0.0, 0.0)]
+
+
+def test_closed_loop_return_moves_are_all_g0_never_g1():
+    subpaths = [[(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)], [(5.0, 5.0), (15.0, 5.0)]]
+    text = s2g.moves_to_gcode(subpaths, home=True, closed_loop=True)
+    lines = text.splitlines()
+
+    return_start = next(i for i, l in enumerate(lines) if l.startswith("G0 F"))
+    return_lines = lines[return_start + 1:]
+    assert return_lines  # non-empty for this multi-point input
+    assert all(l.startswith("G0 ") for l in return_lines)
+    assert not any(l.startswith("G1") for l in return_lines)
+
+
+def test_closed_loop_return_section_starts_with_default_feed():
+    text = s2g.moves_to_gcode([[(0.0, 0.0), (10.0, 0.0)]], home=False, closed_loop=True)
+    assert f"G0 F{s2g.DEFAULT_RETURN_FEED_MM_MIN:g}" in text.splitlines()
+
+
+def test_closed_loop_return_section_honors_custom_return_feed():
+    text = s2g.moves_to_gcode(
+        [[(0.0, 0.0), (10.0, 0.0)]], home=False, closed_loop=True, return_feed_mm_min=1500.0
+    )
+    assert "G0 F1500" in text.splitlines()
+    assert f"G0 F{s2g.DEFAULT_RETURN_FEED_MM_MIN:g}" not in text.splitlines()
+
+
+def test_closed_loop_ends_at_first_forward_waypoint_without_home():
+    subpaths = [[(3.0, 4.0), (10.0, 0.0), (10.0, 10.0)]]
+    text = s2g.moves_to_gcode(subpaths, home=False, closed_loop=True)
+    last_line = text.splitlines()[-1]
+    assert last_line == "G0 X3.000 Y4.000"
+
+
+def test_closed_loop_ends_at_home_point_when_home_is_true():
+    subpaths = [[(5.0, 5.0), (15.0, 5.0)]]
+    text = s2g.moves_to_gcode(subpaths, home=True, closed_loop=True)
+    last_line = text.splitlines()[-1]
+    assert last_line == "G0 X0.000 Y0.000"
+
+
+def test_closed_loop_single_point_forward_path_emits_no_return_moves():
+    # Only one waypoint total -> waypoints[:-1] is empty -> nothing to retrace.
+    text = s2g.moves_to_gcode([[(5.0, 5.0)]], home=False, closed_loop=True)
+    lines = text.splitlines()
+    return_start = next(i for i, l in enumerate(lines) if l.startswith("G0 F"))
+    assert lines[return_start + 1:] == []
+
+
+# --- convert(fit_box_mm=...) / _fit_to_box(): fit-and-center into a mm box -- #
+
+def test_fit_box_wide_artwork_scales_to_width_and_centers_vertically():
+    # 100x10, box is 50x50 -> width-limited scale 0.5 -> 50x5, centered on Y.
+    subpaths = s2g._fit_to_box(
+        [[(0.0, 0.0), (100.0, 0.0), (100.0, 10.0), (0.0, 10.0)]], (0.0, 0.0, 50.0, 50.0)
+    )
+    xs = [x for sp in subpaths for x, _ in sp]
+    ys = [y for sp in subpaths for _, y in sp]
+    assert (min(xs), max(xs)) == pytest.approx((0.0, 50.0))
+    assert (min(ys), max(ys)) == pytest.approx((22.5, 27.5))
+
+
+def test_fit_box_tall_artwork_scales_to_height_and_centers_horizontally():
+    # 10x100, box is 50x50 -> height-limited scale 0.5 -> 5x50, centered on X.
+    subpaths = s2g._fit_to_box(
+        [[(0.0, 0.0), (10.0, 0.0), (10.0, 100.0), (0.0, 100.0)]], (0.0, 0.0, 50.0, 50.0)
+    )
+    xs = [x for sp in subpaths for x, _ in sp]
+    ys = [y for sp in subpaths for _, y in sp]
+    assert (min(xs), max(xs)) == pytest.approx((22.5, 27.5))
+    assert (min(ys), max(ys)) == pytest.approx((0.0, 50.0))
+
+
+def test_fit_box_offset_box_centers_relative_to_box_origin():
+    subpaths = s2g._fit_to_box(
+        [[(0.0, 0.0), (100.0, 0.0), (100.0, 10.0), (0.0, 10.0)]], (10.0, 20.0, 60.0, 70.0)
+    )
+    xs = [x for sp in subpaths for x, _ in sp]
+    ys = [y for sp in subpaths for _, y in sp]
+    assert (min(xs), max(xs)) == pytest.approx((10.0, 60.0))
+    assert (min(ys), max(ys)) == pytest.approx((42.5, 47.5))
+
+
+def test_fit_box_invalid_box_raises_value_error():
+    with pytest.raises(ValueError, match="invalid fit box"):
+        s2g._fit_to_box([[(0.0, 0.0), (10.0, 0.0)]], (10.0, 0.0, 10.0, 50.0))
+
+
+def test_convert_fit_box_mm_handles_zero_width_source_without_zero_division(tmp_path):
+    # A vertical line has a zero-width bbox; scale must fall back to the
+    # height-only ratio instead of dividing by zero.
+    svg_path = tmp_path / "vertical_line.svg"
+    svg_path.write_text(_svg('<path d="M5,0 L5,10"/>'))
+    subpaths, _ = s2g.convert(svg_path, fit_box_mm=(0.0, 0.0, 50.0, 50.0))
+    xs = [x for sp in subpaths for x, _ in sp]
+    ys = [y for sp in subpaths for _, y in sp]
+    assert all(math.isfinite(v) for v in xs + ys)
+    assert 0.0 <= min(xs) and max(xs) <= 50.0
+    assert (min(ys), max(ys)) == pytest.approx((0.0, 50.0))
+
+
+def test_convert_fit_box_mm_applied_after_normalize(tmp_path):
+    svg_path = tmp_path / "wide.svg"
+    svg_path.write_text(_svg('<path d="M0,0 L100,0 L100,10 L0,10 Z"/>'))
+    subpaths, _ = s2g.convert(svg_path, fit_box_mm=(0.0, 0.0, 50.0, 50.0))
+    xs = [x for sp in subpaths for x, _ in sp]
+    ys = [y for sp in subpaths for _, y in sp]
+    assert (min(xs), max(xs)) == pytest.approx((0.0, 50.0))
+    assert (min(ys), max(ys)) == pytest.approx((22.5, 27.5))
+
+
+# --- main(): --fit-box-mm CLI flag ------------------------------------------- #
+
+def test_cli_fit_box_mm_fits_and_centers_artwork(tmp_path, capsys, monkeypatch):
+    svg_path = tmp_path / "wide.svg"
+    svg_path.write_text(_svg('<path d="M0,0 L100,0 L100,10 L0,10 Z"/>'))
+    out_path = tmp_path / "wide.gcode"
+
+    monkeypatch.setattr(sys, "argv", [
+        "svg_to_gcode.py", str(svg_path), "-o", str(out_path),
+        "--fit-box-mm", "0", "0", "50", "50",
+    ])
+    s2g.main()
+    capsys.readouterr()
+
+    # gcode.bounds() would also include the machine's implicit (0, 0) starting
+    # position (the first G0 travel move's start point); restrict to the
+    # sprayed (G1) segments, which is what --fit-box-mm actually controls.
+    spray = [m for m in gcode.load_moves(str(out_path)) if m.spray_on]
+    xs = [m.start[0] for m in spray] + [m.end[0] for m in spray]
+    ys = [m.start[1] for m in spray] + [m.end[1] for m in spray]
+    assert (min(xs), max(xs)) == pytest.approx((0.0, 0.05))
+    assert (min(ys), max(ys)) == pytest.approx((0.0225, 0.0275))
+
+
+@pytest.mark.parametrize("extra_args", [
+    ["--scale", "2.0"],
+    ["--no-normalize"],
+    ["--origin-x-mm", "5"],
+    ["--origin-y-mm", "5"],
+])
+def test_cli_fit_box_mm_rejects_combination_with_other_placement_flags(
+    tmp_path, capsys, monkeypatch, extra_args
+):
+    svg_path = tmp_path / "square.svg"
+    svg_path.write_text(_svg('<path d="M0,0 L10,0 L10,10 L0,10 Z"/>'))
+
+    monkeypatch.setattr(sys, "argv", [
+        "svg_to_gcode.py", str(svg_path),
+        "--fit-box-mm", "0", "0", "50", "50",
+        *extra_args,
+    ])
+    with pytest.raises(SystemExit):
+        s2g.main()
+    assert "cannot be combined" in capsys.readouterr().err
+
+
+def test_cli_fit_box_mm_invalid_box_errors_clearly(tmp_path, capsys, monkeypatch):
+    svg_path = tmp_path / "square.svg"
+    svg_path.write_text(_svg('<path d="M0,0 L10,0 L10,10 L0,10 Z"/>'))
+
+    monkeypatch.setattr(sys, "argv", [
+        "svg_to_gcode.py", str(svg_path),
+        "--fit-box-mm", "10", "0", "5", "50",
+    ])
+    with pytest.raises(SystemExit):
+        s2g.main()
+    assert "invalid fit box" in capsys.readouterr().err
+
+
+# --- main(): --closed-loop / --return-feed CLI flags ------------------------- #
+
+def test_cli_return_feed_without_closed_loop_errors_clearly(tmp_path, capsys, monkeypatch):
+    svg_path = tmp_path / "square.svg"
+    svg_path.write_text(_svg('<path d="M0,0 L10,0 L10,10 L0,10 Z"/>'))
+
+    monkeypatch.setattr(sys, "argv", [
+        "svg_to_gcode.py", str(svg_path), "--return-feed", "1500",
+    ])
+    with pytest.raises(SystemExit):
+        s2g.main()
+    assert "--return-feed requires --closed-loop" in capsys.readouterr().err
+
+
+def test_cli_closed_loop_alone_uses_default_return_feed(tmp_path, capsys, monkeypatch):
+    svg_path = tmp_path / "square.svg"
+    svg_path.write_text(_svg('<path d="M0,0 L10,0 L10,10 L0,10 Z"/>'))
+    out_path = tmp_path / "square.gcode"
+
+    monkeypatch.setattr(sys, "argv", [
+        "svg_to_gcode.py", str(svg_path), "-o", str(out_path), "--closed-loop",
+    ])
+    s2g.main()
+    capsys.readouterr()
+
+    text = out_path.read_text()
+    assert f"G0 F{s2g.DEFAULT_RETURN_FEED_MM_MIN:g}" in text.splitlines()
+
+
+def test_cli_closed_loop_with_return_feed_passes_custom_value_through(
+    tmp_path, capsys, monkeypatch
+):
+    svg_path = tmp_path / "square.svg"
+    svg_path.write_text(_svg('<path d="M0,0 L10,0 L10,10 L0,10 Z"/>'))
+    out_path = tmp_path / "square.gcode"
+
+    monkeypatch.setattr(sys, "argv", [
+        "svg_to_gcode.py", str(svg_path), "-o", str(out_path),
+        "--closed-loop", "--return-feed", "1200",
+    ])
+    s2g.main()
+    capsys.readouterr()
+
+    text = out_path.read_text()
+    assert "G0 F1200" in text.splitlines()
+    assert f"G0 F{s2g.DEFAULT_RETURN_FEED_MM_MIN:g}" not in text.splitlines()
+
+
+def test_cli_without_closed_loop_omits_return_pass(tmp_path, capsys, monkeypatch):
+    svg_path = tmp_path / "square.svg"
+    svg_path.write_text(_svg('<path d="M0,0 L10,0 L10,10 L0,10 Z"/>'))
+    out_path = tmp_path / "square.gcode"
+
+    monkeypatch.setattr(sys, "argv", [
+        "svg_to_gcode.py", str(svg_path), "-o", str(out_path),
+    ])
+    s2g.main()
+    capsys.readouterr()
+
+    text = out_path.read_text()
+    assert not any(l.startswith("G0 F") for l in text.splitlines())

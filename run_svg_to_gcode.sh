@@ -20,9 +20,9 @@ PYTHON="${PYTHON:-python}"
 
 FIT_XMIN=0
 FIT_YMIN=0
-FIT_XMAX=120
-FIT_YMAX=120
-OUTPUT_PATH="output/paths_0_to_12cm.gcode"
+FIT_XMAX=150
+FIT_YMAX=150
+OUTPUT_PATH="output/paths_0_to_15cm.gcode"
 CLOSED_LOOP=true
 RETURN_FEED=""
 

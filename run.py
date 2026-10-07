@@ -10,6 +10,10 @@ Examples
     python run.py --pressure-bar 5 --orifice-mm 1.2 --shape flat_fan
     python run.py --distribution normal --mean-radius-mm 0.3 --radius-std-mm 0.08
     python run.py --droplets 5000                   # pin an explicit droplet count
+    python run.py --run-name trial_3                # outputs in output/trial_3/
+
+Every run writes into its own folder, output/<run-name>/ (output/tmp/ when no
+name is given), so runs never mix in one directory.
 """
 
 from __future__ import annotations
@@ -134,13 +138,25 @@ def main() -> None:
                    help="relative std of droplet speed about the exit speed")
     p.add_argument("--dt", type=float, default=1e-3, help="integration timestep (s)")
     p.add_argument("--seed", type=int, default=42, help="RNG seed")
-    p.add_argument("--out", type=Path, default=Path("output/spray_summary.png"),
-                   help="output figure path")
+    # Output: every run gets its own folder <output-root>/<run-name>/.
+    p.add_argument("--run-name", default=None,
+                   help="name of this run's output folder under --output-root "
+                        f"(default: '{storage.DEFAULT_RUN_NAME}', a scratch folder)")
+    p.add_argument("--output-root", type=Path, default=storage.DEFAULT_OUTPUT_ROOT,
+                   help=f"parent of all run folders (default: {storage.DEFAULT_OUTPUT_ROOT})")
+    p.add_argument("--out", type=Path, default=Path("spray_summary.png"),
+                   help="output figure: a bare file name goes into the run folder, "
+                        "a path with a directory is used as given")
     p.add_argument("--no-plot", action="store_true", help="skip figure generation")
-    p.add_argument("--data", type=Path, default=Path("output/spray_data.npz"),
-                   help="output .npz data path (result arrays + config)")
+    p.add_argument("--data", type=Path, default=Path("spray_data.npz"),
+                   help="output .npz data (result arrays + config); same placement "
+                        "rule as --out")
     p.add_argument("--no-data", action="store_true", help="skip saving the .npz data")
     args = p.parse_args()
+
+    run_dir = storage.run_directory(args.run_name, args.output_root)
+    out_path = storage.resolve_output_path(args.out, run_dir)
+    data_path = storage.resolve_output_path(args.data, run_dir)
 
     try:
         config = build_config(args)
@@ -155,7 +171,8 @@ def main() -> None:
           f"{args.shape}; {source}")
     print(f"Droplet size: {args.distribution}, "
           f"mean {args.mean_radius_mm} mm +/- {args.radius_std_mm} mm")
-    print(f"Drag model: {config.physics.drag_model}\n")
+    print(f"Drag model: {config.physics.drag_model}")
+    print(f"Run folder: {run_dir}\n")
 
     result = Simulator(config).run()
     stats = analysis.summarize(result, config)
@@ -180,11 +197,11 @@ def main() -> None:
               "Lower --spray-duration or raise the cap for a full run.")
 
     if not args.no_data:
-        data_path = storage.save_result(result, config, args.data)
-        print(f"\nData written to {data_path.resolve()}")
+        written = storage.save_result(result, config, data_path)
+        print(f"\nData written to {written.resolve()}")
 
     if not args.no_plot:
-        path = plots.save_figure(result, config, args.out)
+        path = plots.save_figure(result, config, out_path)
         print(f"Figure written to {path.resolve()}")
 
 

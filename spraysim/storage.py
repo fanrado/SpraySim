@@ -189,6 +189,34 @@ def load_uniformity(path: str | Path) -> dict[str, float] | None:
         }
 
 
+DEFAULT_OUTPUT_ROOT = Path("output")
+DEFAULT_RUN_NAME = "tmp"
+
+
+def run_directory(run_name: str | None = None,
+                  root: str | Path = DEFAULT_OUTPUT_ROOT) -> Path:
+    """The per-run output folder ``<root>/<run_name>``.
+
+    Every simulation writes into its own folder so runs do not pile up in one
+    directory; with no name the scratch folder ``<root>/tmp`` is used.
+    """
+    name = (run_name or "").strip() or DEFAULT_RUN_NAME
+    return Path(root) / name
+
+
+def resolve_output_path(path: str | Path, run_dir: str | Path) -> Path:
+    """Place a bare file name inside ``run_dir``; leave an explicit path alone.
+
+    ``"spray_data.npz"`` -> ``run_dir/spray_data.npz``, while
+    ``"elsewhere/spray_data.npz"`` (any path with a directory part) is used
+    as given so a caller can still direct one file anywhere.
+    """
+    path = Path(path)
+    if path.parent == Path("."):
+        return Path(run_dir) / path
+    return path
+
+
 def save_result(
     result: SimResult,
     config: SimConfig,

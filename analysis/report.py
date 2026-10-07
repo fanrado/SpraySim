@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a PDF report from saved SpraySim runs (``output/*.npz``).
+"""Build a PDF report from saved SpraySim runs (``output/<run>/*.npz``).
 
 Each ``.npz`` archive written by a simulation run (see ``spraysim.storage``) is
 fully self-describing — it carries the per-droplet arrays *and* the config that
@@ -8,10 +8,10 @@ without re-running the simulation.
 
 Usage
 -----
-    python analysis/report.py                       # all output/*.npz -> output/spray_report.pdf
-    python analysis/report.py output/big_drops.npz  # one run
+    python analysis/report.py                           # every output/**/*.npz -> output/spray_report.pdf
+    python analysis/report.py output/tmp/big_drops.npz  # one run
     python analysis/report.py a.npz b.npz --out report.pdf
-    python analysis/report.py --glob "output/*.npz" --out output/spray_report.pdf
+    python analysis/report.py --glob "output/trial_*/*.npz" --out output/trials.pdf
 
 The PDF contains, per run, the standard 2x2 summary figure, an extra-analysis
 page (radial coverage CDF and size-vs-range scatter) and a config/stats page;
@@ -39,6 +39,14 @@ from matplotlib.backends.backend_pdf import PdfPages  # noqa: E402
 from spraysim import analysis, plots, storage  # noqa: E402
 
 
+def run_label(path: Path) -> str:
+    """``<run folder>/<stem>`` so archives from different run folders stay
+    distinguishable in the report (``tmp/spray_data``, ``trial_3/spray_data``)."""
+    path = Path(path)
+    parent = path.parent.name
+    return f"{parent}/{path.stem}" if parent and parent != "output" else path.stem
+
+
 def load_runs(paths: list[Path]):
     """Load each .npz into (name, result, config, stats).
 
@@ -54,7 +62,7 @@ def load_runs(paths: list[Path]):
                   file=sys.stderr)
             continue
         stats = analysis.summarize(result, config)
-        runs.append((p.stem, result, config, stats))
+        runs.append((run_label(p), result, config, stats))
     if not runs:
         raise SystemExit("error: none of the given .npz files were readable runs.")
     return runs
@@ -265,23 +273,24 @@ def resolve_paths(args: argparse.Namespace) -> list[Path]:
     if args.inputs:
         paths = [Path(p) for p in args.inputs]
     else:
-        paths = sorted(Path(p) for p in globmod.glob(args.glob))
+        paths = sorted(Path(p) for p in globmod.glob(args.glob, recursive=True))
     missing = [p for p in paths if not p.exists()]
     if missing:
         raise SystemExit(f"error: file(s) not found: {', '.join(map(str, missing))}")
     if not paths:
         raise SystemExit(
             f"error: no .npz files matched {args.glob!r}. Run a simulation first "
-            "(e.g. ./main.sh) to produce output/*.npz."
+            "(e.g. ./main.sh) to produce output/<run>/*.npz."
         )
     return paths
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Generate a PDF report from output/*.npz runs.")
+    p = argparse.ArgumentParser(description="Generate a PDF report from saved runs.")
     p.add_argument("inputs", nargs="*", help="specific .npz files (default: --glob)")
-    p.add_argument("--glob", default="output/*.npz",
-                   help="glob for input archives when none are named (default: output/*.npz)")
+    p.add_argument("--glob", default="output/**/*.npz",
+                   help="glob (** recurses into run folders) for input archives when "
+                        "none are named (default: output/**/*.npz)")
     p.add_argument("--out", type=Path, default=Path("output/spray_report.pdf"),
                    help="output PDF path (default: output/spray_report.pdf)")
     args = p.parse_args()

@@ -11,6 +11,7 @@
 #   ./main.sh fine_mist             # uses config/fine_mist.conf
 #   ./main.sh config/big_drops.conf # explicit path also works
 #   ./main.sh --list                # list available configs
+#   ./main.sh default --run-name x  # outputs in output/x/ (default: output/tmp/)
 #
 set -euo pipefail
 
@@ -65,9 +66,10 @@ HEIGHT="${HEIGHT:-1.5}"
 SPEED_SPREAD="${SPEED_SPREAD:-0.15}"
 DT="${DT:-0.001}"
 SEED="${SEED:-42}"
-OUT="${OUT:-output/spray_summary.png}"
+RUN_NAME="${RUN_NAME:-}"
+OUT="${OUT:-spray_summary.png}"
 NO_PLOT="${NO_PLOT:-false}"
-DATA="${DATA:-output/spray_data.npz}"
+DATA="${DATA:-spray_data.npz}"
 NO_DATA="${NO_DATA:-false}"
 DROPLETS="${DROPLETS:-}"
 GCODE="${GCODE:-}"
@@ -93,6 +95,11 @@ CMD=("$PYTHON" run.py
     --seed "$SEED"
     --out "$OUT"
     --data "$DATA")
+
+# Per-run output folder: output/<RUN_NAME>/ (run.py falls back to output/tmp/).
+if [[ -n "$RUN_NAME" ]]; then
+    CMD+=(--run-name "$RUN_NAME")
+fi
 
 # Only override the material's default density if the config set one.
 if [[ -n "$DENSITY" ]]; then

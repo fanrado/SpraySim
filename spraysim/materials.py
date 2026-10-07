@@ -37,6 +37,7 @@ MATERIALS: dict[str, MaterialProps] = {
     "diesel":    MaterialProps(832.0, 2.50e-3),
     "olive_oil": MaterialProps(915.0, 84.0e-3),
     "glycerin":  MaterialProps(1260.0, 1.41),
+    "toluene":   MaterialProps(867.0, 0.59e-3),
 }
 
 DEFAULT_MATERIAL = "water"

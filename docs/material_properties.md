@@ -73,6 +73,7 @@ Nominal values near ~20 °C, from `spraysim/materials.py`. Viscosity is dynamic
 | `diesel` | 832 | 2.50e-3 | Fuel |
 | `olive_oil` | 915 | 84.0e-3 | Viscous oil |
 | `glycerin` | 1260 | 1.41 | Densest, by far the most viscous |
+| `toluene` | 867 | 0.59e-3 | Aromatic solvent (e.g. for p-terphenyl wavelength-shifter coatings) |
 
 For anything else, pass `--density` (and optionally `--viscosity`), or set the
 corresponding `MaterialConfig` fields, with the values for your liquid and

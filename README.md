@@ -31,81 +31,75 @@ pip install -r requirements.txt
 
 ## Run
 
-The recommended way is through **`main.sh`**, which loads parameters from a config
-file so you never have to type flags:
-
 ```bash
-./main.sh                        # uses config/default.conf
-./main.sh fine_mist              # uses config/fine_mist.conf (by name)
-./main.sh config/big_drops.conf  # explicit path also works
-./main.sh --list                 # list available configs
-./main.sh default --no-plot      # extra flags pass straight through to run.py
+./main.sh
 ```
 
-Inputs live in `config/*.conf` — plain shell `KEY=value` files; copy one to make a
-new preset. Every key is documented in
-[sprayer_parameters.md](docs/sprayer_parameters.md) and
-[material_properties.md](docs/material_properties.md). Shipped presets: `default`
-(water), `fine_mist` (ethanol, small droplets), `big_drops` (large droplets), and
-`raster` (moves the nozzle along a **G-code toolpath** to build a uniform
-coating).
-
-Set `GCODE=` (or `--gcode file.gcode`) to spray while moving along a path
-(`G1` = spray, `G0` = travel) instead of a fixed spot; the deposited film and its
-uniformity (CV / Christiansen CU / coverage) are reported per run.
-
-To turn artwork into a toolpath, `svg_to_gcode.py` converts an SVG file's
-`<path>` elements (lines, Bezier curves, elliptical arcs — all linearised) into
-G-code `run.py --gcode` can consume:
+That runs the simulation with `config/default.conf` and writes the results to
+`output/tmp/`. To use another config or keep the results, name them:
 
 ```bash
-python svg_to_gcode.py drawing.svg                 # -> drawing.gcode
-python svg_to_gcode.py drawing.svg --home --z-offset-mm 150 --feed 2000
-python svg_to_gcode.py drawing.svg --fit-box-mm 0 0 300 200
+./main.sh fine_mist --run-name my_run     # config/fine_mist.conf -> output/my_run/
+./main.sh --list                          # list the available configs
 ```
 
-Both the leading homing move (`--home`) and the Z height (`--z-offset-mm`) are
-optional — by default neither is written, so the path sprays directly and the
-simulator's `--standoff-mm` sets the height instead. `--fit-box-mm` fits and
-centers the artwork inside the given mm box (preserving aspect ratio),
-overriding the SVG's own viewBox/width/height-derived scale — so the same
-source SVG can be rendered to different target sizes without hand-computing
-`--scale`. See `python svg_to_gcode.py --help` and the module docstring for
-scale/units, curve tolerance and Y-flip options.
+A config is a plain `KEY=value` file in `config/`; copy one to make a new
+preset. Any `run.py` flag after the config name is passed straight through and
+overrides the config (`./main.sh default --cone 15 --no-plot`).
 
-For repeated/continuous multi-pass spraying, where the sprayer needs to get
-back to its starting position between runs without a discontinuous jump,
-`--closed-loop` appends a spray-off return pass that retraces the forward
-path in reverse back to the start; `--return-feed` sets its feed rate
-(requires `--closed-loop`, defaults to 2x `--feed`).
+### Parameters
 
-`gcode_to_svg.py` converts the other way — G-code back to SVG — and is the
-validator for `svg_to_gcode.py`: its Y-flip is the exact inverse of
-`svg_to_gcode`'s (both reflect about the *drawn* geometry's own bounding box),
-so an SVG round-tripped through `svg_to_gcode.py` and then `gcode_to_svg.py`
-reproduces the original artwork (exactly for straight edges, and within
-`--tolerance-mm` of the original curve for Beziers/arcs, since those are
-linearised into the G-code in between):
+Every parameter `main.sh` reads from the config, with its `run.py` flag. The
+physics behind each one is in [sprayer_parameters.md](docs/sprayer_parameters.md)
+and [material_properties.md](docs/material_properties.md).
 
-```bash
-python gcode_to_svg.py path.gcode                 # -> path.svg
-python gcode_to_svg.py path.gcode --show-travel    # + dashed G0 travel moves
-```
+| Config key | `run.py` flag | Default | Description |
+|------------|---------------|---------|-------------|
+| **Material (sprayed liquid)** | | | |
+| `MATERIAL` | `--material` | `water` | Liquid, by name: `water`, `seawater`, `ethanol`, `methanol`, `acetone`, `toluene`, `gasoline`, `kerosene`, `diesel`, `olive_oil`, `glycerin`, or any name with `DENSITY`. |
+| `DENSITY` | `--density` | *(registry)* | Liquid density override, kg/m³. |
+| `VISCOSITY` | `--viscosity` | *(registry)* | Liquid dynamic viscosity override, Pa·s (reported, not yet used in flight). |
+| `SOLIDS_FRACTION` | `--solids-fraction` | `1.0` | Volume fraction of solids in the solution; dry film thickness = wet × this. |
+| **Hydraulics (set exit speed, flow and droplet count)** | | | |
+| `PRESSURE_BAR` | `--pressure-bar` | `3.0` | Nozzle pressure, bar. |
+| `ORIFICE_MM` | `--orifice-mm` | `0.8` | Orifice diameter, mm. |
+| `NOZZLE_SHAPE` | `--shape` | `full_cone` | `sharp_orifice`, `rounded_orifice`, `full_cone`, `hollow_cone` or `flat_fan`. |
+| `SPRAY_DURATION` | `--spray-duration` | `0.15` | Seconds the nozzle is open (fixed-spot runs); scales the droplet count. |
+| `DROPLETS` | `--droplets` | *(empty → derived)* | Pin the droplet count instead of deriving it. |
+| **Droplet size distribution** | | | |
+| `DISTRIBUTION` | `--distribution` | `lognormal` | `normal` or `lognormal`. |
+| `MEAN_RADIUS_MM` | `--mean-radius-mm` | `0.4` | Mean droplet radius, mm. |
+| `RADIUS_STD_MM` | `--radius-std-mm` | `0.12` | Standard deviation of the radius, mm. |
+| **Toolpath (optional: spray while moving)** | | | |
+| `GCODE` | `--gcode` | *(empty → fixed spot)* | G-code file; `G1` = spray, `G0` = travel. See [Toolpaths](#toolpaths-g-code). |
+| `FEED` | `--feed` | *(empty → program `F`)* | Feed-rate override, mm/min. |
+| `STANDOFF_MM` | `--standoff-mm` | `150` | Nozzle height above the surface, mm (path runs). |
+| — | `--no-carriage-velocity` | off | Do not add the nozzle travel velocity to the droplets. |
+| **Physics** | | | |
+| `DRAG_MODEL` | `--drag-model` | `clift_gauvin` | `clift_gauvin` (Reynolds-dependent drag) or `constant` (fixed C_d). |
+| **Geometry / integration** | | | |
+| `CONE` | `--cone` | `25.0` | Spray-cone half-angle, degrees. |
+| `HEIGHT` | `--height` | `1.5` | Nozzle height, m (fixed-spot runs). |
+| `SPEED_SPREAD` | `--speed-spread` | `0.15` | Relative spread of droplet speed about the exit speed. |
+| `DT` | `--dt` | `0.001` | Integration timestep, s. |
+| `SEED` | `--seed` | `42` | RNG seed. |
+| **Output** | | | |
+| `RUN_NAME` | `--run-name` | *(empty → `tmp`)* | Folder for this run's files: `output/<RUN_NAME>/`. |
+| `OUT` | `--out` | `spray_summary.png` | Summary figure, file name inside the run folder. |
+| `NO_PLOT` | `--no-plot` | `false` | Skip the figure. |
+| `DATA` | `--data` | `spray_data.npz` | Result archive, file name inside the run folder. |
+| `NO_DATA` | `--no-data` | `false` | Skip the archive. |
 
-`main.sh` just translates a config into a `run.py` invocation, so you can also run
-the CLI directly:
-
-```bash
-python run.py                                    # default nozzle (water)
-python run.py --material diesel --pressure-bar 5 --shape flat_fan
-python run.py --distribution normal --mean-radius-mm 0.3 --radius-std-mm 0.08
-python run.py --help                             # all flags
-```
+`main.sh` only turns the config into a `run.py` call, so `python run.py --help`
+lists the same flags and `python run.py --material diesel --pressure-bar 5` runs
+without a config.
 
 ### Outputs
 
-Each run prints a JSON block of statistics — including **deposition & uniformity**
-(dry film thickness, CV, Christiansen CU, coverage) — and writes:
+Each run writes into its own folder `output/<RUN_NAME>/` (`output/tmp/` when
+unnamed, overwritten by the next unnamed run), prints a JSON block of statistics
+— including **deposition & uniformity** (dry film thickness, CV, Christiansen
+CU, coverage) — and writes:
 
 - a **2×2 summary figure** (`--out`, skip with `--no-plot`);
 - a compressed **`.npz` archive** (`--data`, skip with `--no-data`) holding the
@@ -113,11 +107,34 @@ Each run prints a JSON block of statistics — including **deposition & uniformi
 
   ```python
   from spraysim import storage
-  result, config = storage.load_result("output/spray_data.npz")
+  result, config = storage.load_result("output/tmp/spray_data.npz")
   ```
 
-- optionally a multi-page **PDF report** across saved runs:
-  `python analysis/report.py`.
+- optionally a multi-page **PDF report** across saved runs (all run folders):
+  `python analysis/report.py`;
+- a fit of a measured wavelength-shifter efficiency vs. deposited density with
+  the simulated coating as the model (`python analysis/fit_ptp_efficiency.py`,
+  see [analysis/README.md](analysis/README.md)).
+
+## Toolpaths (G-code)
+
+Set `GCODE=` to spray along a path instead of from a fixed spot; the deposited
+film and its uniformity (CV, Christiansen CU, coverage) are reported per run.
+Two helpers make and check toolpaths:
+
+```bash
+python svg_to_gcode.py drawing.svg --fit-box-mm 0 0 120 120 --closed-loop   # SVG -> G-code
+./run_svg_to_gcode.sh drawing.svg                                           # same, preset box
+python gcode_to_svg.py path.gcode --show-travel                             # G-code -> SVG (check)
+```
+
+`svg_to_gcode.py` linearises the SVG `<path>` elements (lines, Beziers, arcs).
+`--fit-box-mm` fits and centres the artwork in a mm box; `--closed-loop` appends
+a spray-off return pass so repeated passes start where they ended
+(`--return-feed` sets its speed); `--home` and `--z-offset-mm` optionally add a
+homing move and a Z height (otherwise `STANDOFF_MM` sets the height). See
+`--help` for scale, units, tolerance and Y-flip options. `gcode_to_svg.py` is the
+exact inverse and round-trips the artwork, so it is the validator.
 
 ## Use as a library
 
@@ -138,10 +155,12 @@ print(analysis.summarize(result, config).as_dict())
 docs/            # physics.md + input reference docs
 analysis/        # offline analysis of saved runs -> PDF report + validation
 config/          # *.conf presets (KEY=value) — the inputs you edit
-examples/        # example G-code toolpaths (e.g. raster.gcode)
+examples/        # example G-code toolpaths (raster.gcode, raster_120mm_pitch12.gcode)
+output/          # one folder per run: output/<RUN_NAME>/ (git-ignored)
 main.sh          # launcher: loads a config and runs the simulation
-spraysim/        # the package (config, hydraulics, drag, gcode, nozzle, simulator, ...)
 run.py           # Python CLI entry point (called by main.sh)
+svg_to_gcode.py  # SVG artwork -> G-code toolpath; gcode_to_svg.py is its inverse
+spraysim/        # the package (config, hydraulics, drag, gcode, nozzle, simulator, ...)
 tests/           # pytest sanity + physics-validation checks
 ```
 
